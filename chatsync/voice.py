@@ -1,9 +1,13 @@
+import re
+
 import frappe
+from werkzeug.wrappers import Response
 
 from chatsync import api, transcription
 from chatsync.beeper import VOICE_FALLBACK, BeeperError
 
 GONE = (404, 410)
+RANGE = re.compile(r"bytes=(\d*)-(\d*)")
 
 
 def load_audio(message: str) -> tuple[bytes, str]:
@@ -18,21 +22,46 @@ def load_audio(message: str) -> tuple[bytes, str]:
 		if e.status in GONE:
 			frappe.throw("Die Sprachnachricht ist in Beeper nicht mehr verfügbar.")
 		frappe.throw(frappe._("The voice message could not be loaded from Beeper."))
-	if content_type.split(";")[0].strip() == "application/octet-stream":
+	if not content_type.lower().startswith("audio/"):
 		content_type = VOICE_FALLBACK
 	return audio, content_type
 
 
+def byte_range(header: str | None, size: int) -> tuple[int, int] | None:
+	match = RANGE.fullmatch((header or "").strip())
+	if not match:
+		return None
+	start, end = match.groups()
+	if not start:
+		if not end or int(end) == 0:
+			return (size, size - 1)
+		return (max(size - int(end), 0), size - 1)
+	first = int(start)
+	last = min(int(end), size - 1) if end else size - 1
+	return (first, last) if last >= first else (size, size - 1)
+
+
 @frappe.whitelist()
-def play(message: str) -> None:
+def play(message: str) -> Response:
 	audio, content_type = load_audio(message)
-	response = frappe.local.response
-	response.type = "download"
-	response.filename = "voice.ogg"
-	response.filecontent = audio
-	response.content_type = content_type
-	response.display_content_as = "inline"
-	frappe.local.response_headers["Cache-Control"] = "no-store"
+	size = len(audio)
+	response = Response(audio, mimetype=content_type)
+	response.headers["Content-Disposition"] = 'inline; filename="voice.ogg"'
+	response.headers["Cache-Control"] = "no-store"
+	response.headers["X-Content-Type-Options"] = "nosniff"
+	response.headers["Accept-Ranges"] = "bytes"
+	if requested := byte_range(frappe.get_request_header("Range"), size):
+		first, last = requested
+		if first >= size:
+			response = Response(status=416)
+			response.headers["Content-Range"] = f"bytes */{size}"
+			response.headers["Accept-Ranges"] = "bytes"
+			response.headers["Cache-Control"] = "no-store"
+			return response
+		response.status_code = 206
+		response.data = audio[first : last + 1]
+		response.headers["Content-Range"] = f"bytes {first}-{last}/{size}"
+	return response
 
 
 @frappe.whitelist(methods=["POST"])

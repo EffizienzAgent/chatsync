@@ -60,22 +60,53 @@ class TestVoice(IntegrationTestCase):
 	def response(self):
 		return frappe.local.response
 
+	def play(self, range_header=None):
+		with patch.object(
+			frappe, "get_request_header", lambda k, d=None: range_header if k == "Range" else d
+		):
+			return voice.play(self.voice.name)
+
 	def test_play_streams_without_storing(self):
 		files = frappe.db.count("File")
-		voice.play(self.voice.name)
-		response = self.response()
-		self.assertEqual(response["filecontent"], b"OggS-bytes")
-		self.assertEqual(response["type"], "download")
-		self.assertEqual(response["content_type"], "audio/ogg")
-		self.assertEqual(response["display_content_as"], "inline")
-		self.assertEqual(frappe.local.response_headers["Cache-Control"], "no-store")
+		response = self.play()
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data, b"OggS-bytes")
+		self.assertEqual(response.mimetype, "audio/ogg")
+		self.assertEqual(response.headers["Cache-Control"], "no-store")
+		self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+		self.assertEqual(response.headers["Accept-Ranges"], "bytes")
+		self.assertTrue(response.headers["Content-Disposition"].startswith("inline"))
 		self.assertEqual(self.fake.requested, [SRC])
 		self.assertEqual(frappe.db.count("File"), files)
 
-	def test_play_voice_with_octet_stream_is_served_as_ogg(self):
-		self.fake.audio = (b"x", "application/octet-stream")
-		voice.play(self.voice.name)
-		self.assertEqual(self.response()["content_type"], "audio/ogg")
+	def test_play_never_serves_non_audio_types(self):
+		for upstream in ("text/html", "image/svg+xml", "application/octet-stream"):
+			self.fake.audio = (b"<script>", upstream)
+			response = self.play()
+			self.assertEqual(response.mimetype, "audio/ogg")
+			self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+
+	def test_play_keeps_audio_types(self):
+		self.fake.audio = (b"x", "audio/mpeg")
+		self.assertEqual(self.play().mimetype, "audio/mpeg")
+
+	def test_play_range(self):
+		response = self.play("bytes=2-5")
+		self.assertEqual(response.status_code, 206)
+		self.assertEqual(response.data, b"gS-b")
+		self.assertEqual(response.headers["Content-Range"], "bytes 2-5/10")
+		self.assertEqual(response.headers["Accept-Ranges"], "bytes")
+
+	def test_play_open_ended_range(self):
+		response = self.play("bytes=7-")
+		self.assertEqual(response.status_code, 206)
+		self.assertEqual(response.data, b"tes")
+		self.assertEqual(response.headers["Content-Range"], "bytes 7-9/10")
+
+	def test_play_unsatisfiable_range(self):
+		response = self.play("bytes=50-")
+		self.assertEqual(response.status_code, 416)
+		self.assertEqual(response.headers["Content-Range"], "bytes */10")
 
 	def test_transcribe_stores_text(self):
 		reply = MagicMock(ok=True)
@@ -116,7 +147,7 @@ class TestVoice(IntegrationTestCase):
 		other = make_user("other", ["Chat User"])
 		frappe.set_user(other)
 		with self.assertRaises(frappe.PermissionError):
-			voice.play(self.voice.name)
+			self.play()
 		with self.assertRaises(frappe.PermissionError):
 			voice.transcribe(self.voice.name)
 		self.assertEqual(self.fake.requested, [])
@@ -125,19 +156,19 @@ class TestVoice(IntegrationTestCase):
 		for status in (404, 410):
 			self.fake.error = BeeperError(status, "gone")
 			with self.assertRaises(frappe.ValidationError) as ctx:
-				voice.play(self.voice.name)
+				self.play()
 			self.assertIn("Die Sprachnachricht ist in Beeper nicht mehr verfügbar.", str(ctx.exception))
 
 	def test_other_beeper_error_is_generic(self):
 		self.fake.error = BeeperError(500, "boom")
 		with self.assertRaises(frappe.ValidationError) as ctx:
-			voice.play(self.voice.name)
+			self.play()
 		self.assertNotIn("nicht mehr verfügbar", str(ctx.exception))
 
 	def test_non_voice_message_rejected(self):
 		self.voice.db_set("kind", "Image")
 		with self.assertRaises(frappe.ValidationError):
-			voice.play(self.voice.name)
+			self.play()
 
 	def test_provider_factory(self):
 		provider = transcription.provider()

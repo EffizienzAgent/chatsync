@@ -253,7 +253,7 @@ def identity(doc) -> tuple:
 
 
 def on_contact_update(doc, method=None) -> None:
-	if frappe.flags.in_import or frappe.flags.in_carddav_pull or frappe.flags.in_chat_assignment:
+	if frappe.flags.in_import or frappe.flags.in_carddav_import or frappe.flags.in_chat_assignment:
 		return
 	phones, identifiers = identity(doc)
 	if not (phones or identifiers):

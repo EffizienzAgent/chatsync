@@ -251,6 +251,21 @@ class TestSync(ChatsyncTestCase):
 			doc.save(ignore_permissions=True)
 			enqueue.assert_called_once()
 
+	def test_carddav_pull_triggers_rematch_but_initial_import_does_not(self):
+		self.addCleanup(frappe.flags.pop, "in_carddav_pull", None)
+		self.addCleanup(frappe.flags.pop, "in_carddav_import", None)
+		doc = frappe.get_doc("Contact", self.contact)
+		with patch.object(sync, "enqueue") as enqueue:
+			frappe.flags.in_carddav_pull = True
+			frappe.flags.in_carddav_import = True
+			doc.append("phone_nos", {"phone": f"+4917{int(tag()[:7], 16) % 10**8:08d}"})
+			doc.save(ignore_permissions=True)
+			enqueue.assert_not_called()
+			frappe.flags.in_carddav_import = False
+			doc.append("phone_nos", {"phone": f"+4917{int(tag()[:7], 16) % 10**8:08d}"})
+			doc.save(ignore_permissions=True)
+			enqueue.assert_called_once()
+
 	def test_new_contact_with_phone_enqueues_once(self):
 		with patch.object(sync, "enqueue") as enqueue:
 			make_contact(phones=[f"+4917{int(tag()[:7], 16) % 10**8:08d}"])

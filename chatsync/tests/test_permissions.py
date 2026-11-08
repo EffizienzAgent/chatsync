@@ -117,14 +117,13 @@ class TestPermissions(ChatsyncTestCase):
 		frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("Chat", chat.name, "account"), account.name)
 
-	def test_administrator_and_jobs_bypass(self):
+	def test_only_administrator_bypasses(self):
 		self.assertIn(self.chat_a.name, frappe.get_list("Chat", pluck="name", user="Administrator"))
 		frappe.set_user(self.user_b)
-		self.assertEqual(frappe.get_list("Chat", pluck="name"), [])
 		frappe.flags.in_job = True
 		self.addCleanup(setattr, frappe.flags, "in_job", False)
-		self.assertIn(self.chat_a.name, frappe.get_list("Chat", pluck="name"))
-		self.assertIn(self.message.name, frappe.get_list("Chat Message", pluck="name"))
+		self.assertEqual(frappe.get_list("Chat", pluck="name"), [])
+		self.assertEqual(frappe.get_list("Chat Message", pluck="name"), [])
 
 	def test_chat_account_visibility(self):
 		other = make_user("c", ["Chat User"])

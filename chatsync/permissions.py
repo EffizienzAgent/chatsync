@@ -4,7 +4,7 @@ OWNER_FIELD = {"Chat Account": "user", "Chat": "user"}
 
 
 def is_unrestricted(user: str) -> bool:
-	return user == "Administrator" or bool(frappe.flags.in_job)
+	return user == "Administrator"
 
 
 def owner_of(doc) -> str | None:

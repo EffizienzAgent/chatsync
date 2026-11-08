@@ -78,9 +78,9 @@ What gets imported:
 
 - Only chats with a matching or assigned contact are stored. Messages of everything else never
   reach the database.
-- Chats and messages are visible only to their owner. The exceptions are the built-in
-  **Administrator** user and the site's background jobs (the sync). The **System Manager** role has
-  no bypass; it can manage Chat Accounts but not read other users' chats.
+- Chats and messages are visible only to their owner. The exception is the built-in
+  **Administrator** user, as which the scheduled sync runs. The **System Manager** role has no
+  bypass; it can manage Chat Accounts but not read other users' chats.
 - The **Chat User** role can only read chats and messages. Every change (assigning, unassigning,
   sending, transcribing, archiving) goes through chatsync's own endpoints, and those that change an
   existing chat are allowed for its owner only.

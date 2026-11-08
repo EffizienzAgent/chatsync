@@ -6,6 +6,11 @@
 .chat-view .chat-bubble { max-width: 70%; padding: var(--padding-sm) var(--padding-md); border-radius: var(--border-radius-lg); background: var(--card-bg); box-shadow: var(--shadow-xs); }
 .chat-view .chat-row.out .chat-bubble { background: var(--bg-blue, var(--primary-light)); }
 .chat-view .chat-text { white-space: pre-wrap; word-break: break-word; }
+.chat-view .chat-html { white-space: normal; }
+.chat-view .chat-html p, .chat-view .chat-html ul, .chat-view .chat-html ol, .chat-view .chat-html pre, .chat-view .chat-html blockquote { margin: 0 0 var(--margin-xs); }
+.chat-view .chat-html > :last-child { margin-bottom: 0; }
+.chat-view .chat-html pre { white-space: pre-wrap; padding: var(--padding-xs); background: var(--control-bg); border-radius: var(--border-radius-sm); }
+.chat-view .chat-html blockquote { padding-left: var(--padding-sm); border-left: 3px solid var(--border-color); color: var(--text-muted); }
 .chat-view .chat-meta { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; text-align: right; }
 .chat-view .chat-kind, .chat-view .chat-transcript { font-size: var(--text-sm); color: var(--text-muted); }
 .chat-view .chat-more { text-align: center; color: var(--text-muted); font-size: var(--text-sm); }

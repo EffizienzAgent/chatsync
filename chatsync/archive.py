@@ -7,6 +7,7 @@ from frappe.utils import add_days, escape_html, format_datetime, getdate
 from frappe.utils.pdf import get_pdf
 
 from chatsync.api import check_chat
+from chatsync.formatting import render
 
 DOCUMENT_TYPE = "correspondence"
 SOURCE_SYSTEM = "chatsync"
@@ -41,7 +42,7 @@ def messages_between(chat: str, start, end) -> list[dict]:
 
 
 def content_of(row: dict) -> str:
-	parts = [escape_html(row.text)] if row.text else []
+	parts = [render(row.text)] if row.text else []
 	if row.transcript:
 		parts.append("🎤 " + escape_html(row.transcript))
 	if not parts and (row.media_url or row.kind not in ("Text", "Voice")):

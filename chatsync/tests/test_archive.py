@@ -38,7 +38,7 @@ class TestArchive(ChatsyncTestCase):
 		self.chat = api.assign_chat(raw["id"], self.contact)
 		frappe.db.delete("Chat Message", {"chat": self.chat})
 		self.raw = raw
-		for day, text in ((1, "first"), (2, "second <b>bold</b>"), (3, "third")):
+		for day, text in ((1, "first"), (2, "second <b>bold</b><script>x()</script>"), (3, "third")):
 			upsert(self.chat, message(raw["id"], 0, text, sortKey=str(1000 + day)))
 		names = frappe.get_all("Chat Message", filters={"chat": self.chat}, pluck="name", order_by="creation")
 		for day, name in enumerate(names, 1):
@@ -65,7 +65,8 @@ class TestArchive(ChatsyncTestCase):
 		self.assertEqual((doc.source_party_type, doc.source_party_id), ("Contact", self.contact))
 		html = render.call_args.args[0]
 		self.assertIn("first", html)
-		self.assertIn("second &lt;b&gt;bold&lt;/b&gt;", html)
+		self.assertIn("second <b>bold</b>", html)
+		self.assertNotIn("<script>", html)
 		self.assertNotIn("third", html)
 
 	def test_changed_content_replaces_with_new_version(self):

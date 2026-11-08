@@ -132,7 +132,7 @@ class ChatView {
 		const $bubble = $(`<div class="chat-bubble"></div>`);
 		if (message.kind === "Voice" && message.has_media) this.voice_player(message).appendTo($bubble);
 		else if (message.kind !== "Text") $(`<div class="chat-kind"></div>`).text(__(message.kind, null, CONTEXT)).appendTo($bubble);
-		if (message.text) $(`<div class="chat-text"></div>`).text(message.text).appendTo($bubble);
+		if (message.html) $(`<div class="chat-text chat-html"></div>`).html(message.html).appendTo($bubble);
 		if (message.transcript) $(`<div class="chat-transcript"></div>`).text(message.transcript).appendTo($bubble);
 		const sender = out ? "" : message.sender_name ? `${message.sender_name} · ` : "";
 		$(`<div class="chat-meta"></div>`).text(sender + message.sent_at.slice(11, 16)).appendTo($bubble);

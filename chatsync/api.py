@@ -5,7 +5,7 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime
 
-from chatsync import messages, sync
+from chatsync import formatting, messages, sync
 from chatsync.beeper import BeeperError
 from chatsync.matching import counterpart, match_chat, phone_contacts, phone_index
 
@@ -227,7 +227,12 @@ MESSAGE_FIELDS = ["name", "sent_at", "direction", "sender_name", "kind", "text",
 
 def serialize(row: dict) -> dict:
 	media_url = row.pop("media_url", None)
-	return {**row, "sent_at": str(row["sent_at"]), "has_media": bool(media_url)}
+	return {
+		**row,
+		"sent_at": str(row["sent_at"]),
+		"html": formatting.render(row["text"]),
+		"has_media": bool(media_url),
+	}
 
 
 def newest_first(chat: str, before: str | None, limit: int) -> list[dict]:

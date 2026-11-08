@@ -88,6 +88,14 @@ class TestChatView(ChatsyncTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			api.get_messages(self.chat)
 
+	def test_get_messages_renders_safe_html(self):
+		upsert(self.chat, message(self.raw["id"], 0, "<p>Hi Max!</p><script>x()</script><p>LG!</p>"))
+		upsert(self.chat, message(self.raw["id"], 0, "*fett* & snake_case"))
+		rows = sorted(api.get_messages(self.chat)["messages"], key=lambda m: m["text"])
+		self.assertEqual(rows[0]["html"], "<strong>fett</strong> &amp; snake_case")
+		self.assertEqual(rows[0]["text"], "*fett* & snake_case")
+		self.assertEqual(rows[1]["html"], "<p>Hi Max!</p><p>LG!</p>")
+
 	def test_get_messages_paging(self):
 		self.fill(5)
 		first = api.get_messages(self.chat, limit=2)

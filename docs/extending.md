@@ -24,7 +24,12 @@ def qualifies(contact: str) -> bool:
 
 The filter applies to **phone matching** only. A chat whose number belongs to several contacts is
 matched when exactly one of them qualifies; when none does, the chat stays unmatched and is not
-stored. Without the hook every contact qualifies.
+stored. Without the hook every contact qualifies. A chat that is already stored keeps its contact
+even when that contact stops qualifying later.
+
+An unassigned chat whose number belongs to exactly one readable contact that does not qualify
+carries that contact as `existing_contact` in `chatsync.api.unassigned_chats`, so a UI can offer to
+assign it instead of creating a duplicate contact.
 
 The filter does not apply to chats assigned by hand ("Assign chat" on the Contact). Contacts the
 chat's owner cannot read are excluded by a separate permission check, independent of the filter.

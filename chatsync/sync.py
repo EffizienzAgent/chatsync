@@ -42,6 +42,16 @@ def rollback() -> None:
 		frappe.db.rollback()
 
 
+def kept(chat: str) -> bool:
+	"""Commits; when the chat was deleted meanwhile (unassigned), drops the messages written for it."""
+	commit()
+	if frappe.db.exists("Chat", chat):
+		return True
+	frappe.db.delete("Chat Message", {"chat": chat})
+	commit()
+	return False
+
+
 def fail(account: str | None, error: Exception) -> None:
 	frappe.log_error(title=f"Chat Sync failed: {error}")
 	if account:
@@ -79,7 +89,7 @@ def sync_account(account: str) -> None:
 				rollback()
 				frappe.log_error(title=f"Chat Sync failed for chat {cp.beeper_chat_id}: {e}")
 				continue
-			commit()
+			kept(chat)
 		queue_incomplete_histories(account)
 	except BeeperError as e:
 		fail(account, e)
@@ -195,9 +205,11 @@ def update_cursor(chat: str, newest_sort_key: str | None) -> None:
 
 
 def import_history(chat: str) -> None:
-	beeper_chat_id, account = frappe.db.get_value("Chat", chat, ["beeper_chat_id", "account"])
+	values = frappe.db.get_value("Chat", chat, ["beeper_chat_id", "account", "newest_sort_key"])
+	if not values:
+		return
+	beeper_chat_id, account, newest = values
 	doc = frappe.get_doc("Chat Account", account)
-	newest = frappe.db.get_value("Chat", chat, "newest_sort_key")
 	try:
 		client = client_for(doc)
 		cursor = None
@@ -207,12 +219,14 @@ def import_history(chat: str) -> None:
 				upsert(chat, raw)
 				if not newest or sort_order(raw.get("sortKey")) > sort_order(newest):
 					newest = raw.get("sortKey")
+			update_cursor(chat, newest)
+			if not kept(chat):
+				return
 			if not cursor or not items:
 				break
 	except BeeperError as e:
 		fail(account, e)
 		return
-	update_cursor(chat, newest)
 	frappe.db.set_value("Chat", chat, "history_complete", 1, update_modified=False)
 	commit()
 

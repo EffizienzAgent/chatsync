@@ -272,6 +272,34 @@ class TestSync(ChatsyncTestCase):
 		self.assertTrue(row.history_complete)
 		self.assertEqual(self.texts(row.name), ["ancient", "new"])
 
+	def deleted_at_commit(self, chat):
+		"""An unassign in another request becomes visible to the job after its next commit."""
+		return patch.object(sync, "commit", lambda: frappe.db.delete("Chat", chat))
+
+	def test_chat_deleted_during_history_import_leaves_no_messages(self):
+		chat = chat_json(self.number)
+		self.run_with(FakeBeeper([chat], {chat["id"]: [[]]}))
+		name = self.chats()[0].name
+		pages = [
+			[message(chat["id"], 1, "a")],
+			[message(chat["id"], 40, "b")],
+			[message(chat["id"], 80, "c")],
+		]
+		fake = FakeBeeper([chat], {chat["id"]: pages})
+		with self.deleted_at_commit(name):
+			self.run_with(fake, sync.import_history, name)
+		self.assertFalse(frappe.db.exists("Chat", name))
+		self.assertEqual(frappe.db.count("Chat Message", {"chat": name}), 0)
+		self.assertEqual([page for _chat, page in fake.calls], [0])
+
+	def test_chat_deleted_during_sync_leaves_no_messages(self):
+		chat = chat_json(self.number)
+		self.run_with(FakeBeeper([chat], {chat["id"]: [[]]}))
+		name = self.chats()[0].name
+		with self.deleted_at_commit(name):
+			self.run_with(FakeBeeper([chat], {chat["id"]: [[message(chat["id"], 0, "late")]]}))
+		self.assertEqual(frappe.db.count("Chat Message", {"chat": name}), 0)
+
 	def test_contact_update_ignores_unrelated_changes(self):
 		with patch.object(sync, "enqueue") as enqueue:
 			doc = frappe.get_doc("Contact", self.contact)

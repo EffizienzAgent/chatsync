@@ -4,6 +4,15 @@ app_publisher = "EffizienzAgent (Tobias Mende)"
 app_description = "Chat history from Beeper for the Frappe Framework"
 app_email = "oss@effizienzagent.de"
 app_license = "mit"
+app_logo_url = "/assets/chatsync/images/chatsync-logo.svg"
+add_to_apps_screen = [
+	{
+		"name": "chatsync",
+		"logo": "/assets/chatsync/images/chatsync-logo.svg",
+		"title": "Chat Sync",
+		"route": "/desk/chat-view",
+	}
+]
 
 fixtures = [{"dt": "Custom Field", "filters": [["module", "=", "Chat Sync"]]}]
 
@@ -33,5 +42,7 @@ doc_events = {
 }
 
 doctype_js = {"Contact": "public/js/contact.js"}
+
+extend_bootinfo = "chatsync.boot.extend_bootinfo"
 
 docarchive_assign = ["chatsync.archive.assign"]

@@ -55,3 +55,39 @@ The file could not be loaded from Beeper.,Die Datei konnte nicht aus Beeper gela
 This message has no such attachment.,Diese Nachricht hat keinen solchen Anhang.,
 Chat Message {0} not found,Chat-Nachricht {0} nicht gefunden,
 "File too large for the preview, please open it in Beeper","Datei zu groß für die Vorschau, bitte in Beeper öffnen",
+Conversations,Unterhaltungen,Chat View
+Conversations,Unterhaltungen,
+Search,Suchen,Chat View
+Select a conversation,Unterhaltung auswählen,Chat View
+Back,Zurück,Chat View
+Send via,Senden über,Chat View
+Send,Senden,Chat View
+No matches,Keine Treffer,Chat View
+No conversations yet,Noch keine Unterhaltungen,Chat View
+You: ,Du: ,Chat View
+Message via {0},Nachricht über {0},Chat View
+No chat to reply to,Kein Chat zum Antworten,Chat View
+Move {0} chat to another contact,{0}-Chat anderem Kontakt zuordnen,Chat View
+Unassign {0} chat,{0}-Chat lösen,Chat View
+Archive {0} chat,{0}-Chat archivieren,Chat View
+Unassign the {0} chat from the contact? Its messages will be deleted.,{0}-Chat vom Kontakt lösen? Die Nachrichten werden gelöscht.,Chat View
+Sticker,Sticker,Chat View
+Location,Standort,Chat View
+Audio,Audio,Chat View
+Unsupported message type,Nicht unterstützter Nachrichtentyp,Chat View
+Unsupported message type,Nicht unterstützter Nachrichtentyp,
+No messages yet,Noch keine Nachrichten,Chat View
+Start chat,Chat starten,
+Account,Konto,
+Phone,Telefon,
+Nothing is sent yet. Write the first message in the chat view.,Es wird noch nichts gesendet. Die erste Nachricht schreibst du in der Chat-Ansicht.,
+"This contact has no phone number. Add one, or assign an existing chat.","Dieser Kontakt hat keine Telefonnummer. Füge eine hinzu oder ordne einen vorhandenen Chat zu.",
+No WhatsApp or Signal account is connected in Beeper.,In Beeper ist kein WhatsApp- oder Signal-Konto verbunden.,
+Voice message,Sprachnachricht,
+Image,Bild,
+File,Datei,
+{0} is not a phone number of this contact.,{0} ist keine Telefonnummer dieses Kontakts.,
+Beeper could not start the chat ({0}). Is the number registered on this network?,Beeper konnte den Chat nicht starten ({0}). Ist die Nummer in diesem Netzwerk registriert?,
+"This chat is already assigned, open it in the chat view.","Dieser Chat ist bereits zugeordnet, bitte in der Chat-Ansicht öffnen.",
+Beeper Type,Beeper-Typ,
+"Beeper's message type for kinds the chat view cannot show (e.g. STICKER, LOCATION)","Nachrichtentyp aus Beeper für Arten, die die Chat-Ansicht nicht anzeigen kann (z. B. STICKER, LOCATION)",

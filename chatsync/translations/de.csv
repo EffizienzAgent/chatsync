@@ -24,3 +24,11 @@ File,Datei,Chat View
 Other,Sonstiges,Chat View
 Sending...,Wird gesendet...,Chat View
 "Not confirmed yet, it will appear at the next sync",Nicht bestätigt; wird beim nächsten Abgleich angezeigt,Chat View
+No transcription service configured,Kein Transkriptionsdienst konfiguriert,
+The voice message could not be loaded from Beeper.,Die Sprachnachricht konnte nicht aus Beeper geladen werden.,
+Transcription failed ({0}),Transkription fehlgeschlagen ({0}),
+The transcription is empty.,Die Transkription ist leer.,
+This message is not a voice message.,Diese Nachricht ist keine Sprachnachricht.,
+Transcribe,Transkribieren,Chat View
+Unsupported audio format,Format wird von diesem Browser nicht unterstützt,Chat View
+Transcribing...,Wird transkribiert...,Chat View

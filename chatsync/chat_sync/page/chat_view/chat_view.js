@@ -98,7 +98,8 @@ class ChatView {
 	bubble(message) {
 		const out = message.direction === "Out";
 		const $bubble = $(`<div class="chat-bubble"></div>`);
-		if (message.kind !== "Text") $(`<div class="chat-kind"></div>`).text(__(message.kind, null, CONTEXT)).appendTo($bubble);
+		if (message.kind === "Voice" && message.has_media) this.voice_player(message).appendTo($bubble);
+		else if (message.kind !== "Text") $(`<div class="chat-kind"></div>`).text(__(message.kind, null, CONTEXT)).appendTo($bubble);
 		if (message.text) $(`<div class="chat-text"></div>`).text(message.text).appendTo($bubble);
 		if (message.transcript) $(`<div class="chat-transcript"></div>`).text(message.transcript).appendTo($bubble);
 		const sender = out ? "" : message.sender_name ? `${message.sender_name} · ` : "";
@@ -107,6 +108,40 @@ class ChatView {
 			.toggleClass("out", out)
 			.attr("data-name", message.name)
 			.append($bubble);
+	}
+
+	voice_player(message) {
+		const $voice = $(`<div class="chat-voice"></div>`);
+		$(`<span class="chat-kind"></span>`).text("🎤").appendTo($voice);
+		const audio = document.createElement("audio");
+		if (!audio.canPlayType('audio/ogg; codecs=opus')) {
+			$(`<span class="text-muted"></span>`).text(__("Unsupported audio format", null, CONTEXT)).appendTo($voice);
+		} else {
+			audio.controls = true;
+			audio.preload = "none";
+			audio.src = `/api/method/chatsync.voice.play?message=${encodeURIComponent(message.name)}`;
+			$voice.append(audio);
+		}
+		if (!message.transcript) {
+			const $button = $(`<button class="btn btn-xs btn-default"></button>`)
+				.text(__("Transcribe", null, CONTEXT))
+				.appendTo($voice);
+			$button.on("click", () => this.transcribe(message, $button));
+		}
+		return $voice;
+	}
+
+	transcribe(message, $button) {
+		$button.prop("disabled", true).text(__("Transcribing...", null, CONTEXT));
+		frappe
+			.call({ method: "chatsync.voice.transcribe", type: "POST", args: { message: message.name } })
+			.then((r) => {
+				message.transcript = r.message;
+				this.$list
+					.find(`.chat-row[data-name="${CSS.escape(message.name)}"]`)
+					.replaceWith(this.bubble(message));
+			})
+			.catch(() => $button.prop("disabled", false).text(__("Transcribe", null, CONTEXT)));
 	}
 
 	render() {

@@ -1,7 +1,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from chatsync.matching import Counterpart, Match, counterpart, match
+from chatsync.matching import Counterpart, Match, counterpart, match, phone_index
 from chatsync.phone import normalize
 from chatsync.tests.helpers import tag, use_hooks
 
@@ -74,18 +74,44 @@ class TestMatching(IntegrationTestCase):
 		)
 		self.assertEqual(match(USER, cp(phone=self.number, chat_id=chat_id)), Match(None, False, True))
 
+	def test_exclusion_does_not_leak_to_other_chat(self):
+		name = tag()
+		excluded_chat = f"!{tag()}:beeper.local"
+		contact = make_contact(
+			identifiers=[
+				{"network": "whatsapp", "beeper_chat_id": excluded_chat, "identifier": name, "excluded": 1},
+				{"network": "whatsapp", "identifier": name},
+			]
+		)
+		self.assertEqual(match(USER, cp(username=name, chat_id=excluded_chat)), Match(None, False, True))
+		self.assertEqual(match(USER, cp(username=name)), Match(contact, False, False))
+
+	def test_prebuilt_index(self):
+		contact = make_contact(phones=[self.number])
+		self.assertEqual(match(USER, cp(phone=self.number), phone_index()), Match(contact, False, False))
+
 	def test_unreadable_contact_ignored(self):
 		chat_id = f"!{tag()}:beeper.local"
 		make_contact(identifiers=[{"network": "whatsapp", "beeper_chat_id": chat_id}])
 		guest = frappe.get_doc(
-			{"doctype": "User", "email": f"nobody-{tag()}@chatsync.test", "first_name": "n", "send_welcome_email": 0}
+			{
+				"doctype": "User",
+				"email": f"nobody-{tag()}@chatsync.test",
+				"first_name": "n",
+				"send_welcome_email": 0,
+			}
 		).insert(ignore_permissions=True)
 		self.assertEqual(match(guest.name, cp(chat_id=chat_id)), Match(None, False, False))
 
 	def test_group_self_and_merged_chats_ignored(self):
 		other = {"id": "@whatsapp_1:beeper.local", "phoneNumber": "+491512345678", "isSelf": False}
 		me = {"id": "@me:beeper.com", "isSelf": True}
-		base = {"id": "!x:beeper.local", "accountID": "whatsapp.4915", "type": "single", "network": "whatsapp"}
+		base = {
+			"id": "!x:beeper.local",
+			"accountID": "whatsapp.4915",
+			"type": "single",
+			"network": "whatsapp",
+		}
 		self.assertEqual(
 			counterpart({**base, "participants": {"items": [me, other]}}),
 			Counterpart("whatsapp", "!x:beeper.local", other["id"], "+491512345678", None, None),

@@ -46,21 +46,20 @@ def counterpart(chat: dict) -> Counterpart | None:
 
 
 def readable(user: str, contacts) -> list[str]:
-	return [
-		c for c in dict.fromkeys(contacts) if frappe.has_permission("Contact", "read", doc=c, user=user)
-	]
+	return [c for c in dict.fromkeys(contacts) if frappe.has_permission("Contact", "read", doc=c, user=user)]
 
 
 def identifier_rows(**filters) -> list[dict]:
 	return frappe.get_all(
 		"Chat Identifier",
 		filters={"parenttype": "Contact", **filters},
-		fields=["parent", "excluded"],
+		fields=["parent", "excluded", "beeper_chat_id"],
 		order_by="creation",
 	)
 
 
-def from_rows(user: str, rows: list[dict]) -> Match | None:
+def from_rows(user: str, rows: list[dict], chat_id: str) -> Match | None:
+	rows = [r for r in rows if not r.excluded or r.beeper_chat_id in (None, "", chat_id)]
 	rows = [r for r in rows if r.parent in readable(user, [r.parent for r in rows])]
 	if not rows:
 		return None
@@ -72,25 +71,34 @@ def from_rows(user: str, rows: list[dict]) -> Match | None:
 	return Match(contacts[0], False, False)
 
 
-def by_phone(user: str, phone: str) -> Match | None:
+def phone_index() -> dict[str, list[str]]:
 	region = frappe.db.get_single_value("Chat Sync Settings", "phone_region") or "DE"
+	index: dict[str, list[str]] = {}
 	rows = frappe.get_all("Contact Phone", filters={"parenttype": "Contact"}, fields=["parent", "phone"])
-	candidates = [r.parent for r in rows if r.phone and normalize(r.phone, region) == phone]
+	for row in rows:
+		if row.phone and (e164 := normalize(row.phone, region)):
+			index.setdefault(e164, []).append(row.parent)
+	return index
+
+
+def by_phone(user: str, phone: str, index: dict[str, list[str]]) -> Match | None:
 	qualifies = contact_filter()
-	contacts = [c for c in readable(user, candidates) if qualifies(c)]
+	contacts = [c for c in readable(user, index.get(phone, [])) if qualifies(c)]
 	if not contacts:
 		return None
 	return Match(contacts[0], False, False) if len(contacts) == 1 else Match(None, True, False)
 
 
-def match(user: str, cp: Counterpart) -> Match:
-	found = from_rows(user, identifier_rows(beeper_chat_id=cp.beeper_chat_id))
+def match(user: str, cp: Counterpart, index: dict[str, list[str]] | None = None) -> Match:
+	found = from_rows(user, identifier_rows(beeper_chat_id=cp.beeper_chat_id), cp.beeper_chat_id)
 	if found:
 		return found
 	for identifier in dict.fromkeys(filter(None, [cp.username, cp.participant_id])):
-		found = from_rows(user, identifier_rows(network=cp.network, identifier=identifier))
+		found = from_rows(user, identifier_rows(network=cp.network, identifier=identifier), cp.beeper_chat_id)
 		if found:
 			return found
-	if cp.phone and (found := by_phone(user, cp.phone)):
-		return found
+	if cp.phone:
+		found = by_phone(user, cp.phone, phone_index() if index is None else index)
+		if found:
+			return found
 	return Match(None, False, False)

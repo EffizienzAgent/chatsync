@@ -290,6 +290,10 @@ class ChatView {
 		return this.chats.find((c) => c.name === this.chat);
 	}
 
+	network_html() {
+		return frappe.utils.escape_html(this.selected().network_label);
+	}
+
 	select_chat(chat) {
 		this.chat = chat;
 		this.clear_pending();
@@ -300,7 +304,7 @@ class ChatView {
 	render_actions() {
 		this.page.clear_menu();
 		if (!this.chat) return;
-		const label = this.selected().network_label;
+		const label = this.network_html();
 		this.page.add_menu_item(__("Move {0} chat to another contact", [label], CONTEXT), () => this.reassign());
 		this.page.add_menu_item(__("Unassign {0} chat", [label], CONTEXT), () => this.unassign());
 		if (this.data.archive_available) {
@@ -311,7 +315,7 @@ class ChatView {
 	reassign() {
 		const chat = this.chat;
 		const dialog = new frappe.ui.Dialog({
-			title: __("Move {0} chat to another contact", [this.selected().network_label], CONTEXT),
+			title: __("Move {0} chat to another contact", [this.network_html()], CONTEXT),
 			fields: [{ fieldname: "contact", fieldtype: "Link", options: "Contact", label: __("Contact"), reqd: 1 }],
 			primary_action_label: __("Reassign", null, CONTEXT),
 			primary_action: ({ contact }) => {
@@ -328,7 +332,7 @@ class ChatView {
 	archive() {
 		const chat = this.chat;
 		const dialog = new frappe.ui.Dialog({
-			title: __("Archive {0} chat", [this.selected().network_label], CONTEXT),
+			title: __("Archive {0} chat", [this.network_html()], CONTEXT),
 			fields: [
 				{ fieldname: "date_from", fieldtype: "Date", label: __("From", null, CONTEXT) },
 				{ fieldname: "date_to", fieldtype: "Date", label: __("To", null, CONTEXT) },
@@ -357,7 +361,7 @@ class ChatView {
 
 	unassign() {
 		const chat = this.chat;
-		const label = this.selected().network_label;
+		const label = this.network_html();
 		frappe.confirm(__("Unassign the {0} chat from the contact? Its messages will be deleted.", [label], CONTEXT), () =>
 			frappe.call({ method: "chatsync.api.unassign_chat", args: { chat } }).then(() => {
 				this.forget_contacts();
@@ -536,7 +540,9 @@ class ChatView {
 		const added = incoming
 			.filter((m) => !known.has(m.name))
 			.map((m) => ({ ...m, chat, network: info.network, network_label: info.network_label }));
-		this.messages = this.messages.concat(added).sort((a, b) => a.sent_at.localeCompare(b.sent_at));
+		this.messages = this.messages
+			.concat(added)
+			.sort((a, b) => a.sent_at.localeCompare(b.sent_at) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 		this.render();
 		return added;
 	}

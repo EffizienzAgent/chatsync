@@ -36,7 +36,10 @@ function start_chat_dialog(contact, { accounts, phones }) {
 				fieldtype: "Select",
 				label: __("Account"),
 				reqd: 1,
-				options: accounts.map((a) => ({ value: a.account_id, label: [a.network_label, a.name].filter(Boolean).join(" · ") })),
+				options: accounts.map((a) => ({
+					value: a.account_id,
+					label: frappe.utils.escape_html([a.network_label, a.name].filter(Boolean).join(" · ")),
+				})),
 				default: accounts[0].account_id,
 			},
 			{ fieldname: "phone", fieldtype: "Select", label: __("Phone"), reqd: 1, options: phones, default: phones[0] },

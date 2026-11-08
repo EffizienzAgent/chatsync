@@ -170,6 +170,39 @@ class TestStartChat(BrowserCase):
 		)
 		self.assertEqual(str(frappe.db.get_value("Contact", self.contact, "modified")), "2000-01-01 00:00:00")
 
+	def test_existing_chat_of_same_contact_is_reused(self):
+		self.request()
+		first = api.start_chat(self.contact, "whatsapp", self.phone)
+		self.fake.start_chat = lambda account_id, user: self.fake.chat(
+			frappe.db.get_value("Chat", first, "beeper_chat_id")
+		)
+		self.assertEqual(api.start_chat(self.contact, "whatsapp", self.phone), first)
+
+	def test_chat_of_another_contact_is_not_moved(self):
+		self.request()
+		other = make_contact(phones=[self.phone])
+		taken = api.start_chat(other, "whatsapp", self.phone)
+		beeper_chat_id = frappe.db.get_value("Chat", taken, "beeper_chat_id")
+		self.fake.start_chat = lambda account_id, user: self.fake.chat(beeper_chat_id)
+		with self.assertRaises(frappe.ValidationError) as caught:
+			api.start_chat(self.contact, "whatsapp", self.phone)
+		self.assertIn("another contact", str(caught.exception))
+		self.assertEqual(frappe.db.get_value("Chat", taken, "contact"), other)
+		rows = frappe.get_all("Chat Identifier", filters={"beeper_chat_id": beeper_chat_id}, pluck="parent")
+		self.assertEqual(rows, [other])
+
+	def test_session_refusal_is_neutral(self):
+		with patch.object(frappe.local, "request", None, create=True):
+			with self.assertRaises(frappe.PermissionError) as caught:
+				api.start_chat(self.contact, "whatsapp", self.phone)
+		self.assertIn("browser session", str(caught.exception))
+
+	def test_foreign_phone_is_escaped_in_error(self):
+		self.request()
+		with self.assertRaises(frappe.ValidationError) as caught:
+			api.start_chat(self.contact, "whatsapp", "<img src=x>")
+		self.assertNotIn("<img", str(caught.exception))
+
 	def test_beeper_error_is_clear(self):
 		self.request()
 		self.fake.failing = "user not found"

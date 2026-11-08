@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from datetime import timedelta
 
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import escape_html, now_datetime
 
 from chatsync import formatting, messages, networks, sync
 from chatsync.beeper import BeeperError
@@ -377,7 +377,7 @@ def has_csrf_token() -> bool:
 	return bool(expected) and frappe.get_request_header("X-Frappe-CSRF-Token") == expected
 
 
-def check_browser_session(command: str = SEND_COMMAND) -> None:
+def check_browser_session(command: str = SEND_COMMAND, message: str | None = None) -> None:
 	"""The request must be the browser's own POST to `command`, so no other endpoint can call it."""
 	request = getattr(frappe.local, "request", None)
 	if (
@@ -387,7 +387,9 @@ def check_browser_session(command: str = SEND_COMMAND) -> None:
 		or frappe.form_dict.get("cmd") != command
 		or not has_csrf_token()
 	):
-		frappe.throw(frappe._("Sending is only possible from the chat view."), frappe.PermissionError)
+		frappe.throw(
+			message or frappe._("Sending is only possible from the chat view."), frappe.PermissionError
+		)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -476,11 +478,11 @@ def chat_start_options(contact: str) -> dict:
 @frappe.whitelist(methods=["POST"])
 def start_chat(contact: str, account_id: str, phone: str) -> str:
 	"""Opens a direct chat with one of the contact's numbers and assigns it; sends nothing."""
-	check_browser_session(START_COMMAND)
+	check_browser_session(START_COMMAND, frappe._("Only possible in a browser session."))
 	account = session_account()
 	check_contact(contact)
 	if phone not in contact_phones(contact):
-		frappe.throw(frappe._("{0} is not a phone number of this contact.").format(phone))
+		frappe.throw(frappe._("{0} is not a phone number of this contact.").format(escape_html(phone)))
 	client = sync.client_for(account)
 	user = {"phoneNumber": phone, "fullName": contact_name(contact)}
 	try:
@@ -494,6 +496,20 @@ def start_chat(contact: str, account_id: str, phone: str) -> str:
 	cp = counterpart(raw)
 	if not cp:
 		raw, cp = direct_chat(client, raw["id"])
+	stored = frappe.db.get_value(
+		"Chat",
+		{"account": account.name, "beeper_chat_id": cp.beeper_chat_id},
+		["name", "contact"],
+		as_dict=True,
+	)
+	if stored and stored.contact == contact:
+		return stored.name
+	if stored and stored.contact:
+		frappe.throw(
+			frappe._("This chat already belongs to another contact ({0}).").format(
+				escape_html(contact_name(stored.contact))
+			)
+		)
 	return assign(account, raw, cp, contact)
 
 

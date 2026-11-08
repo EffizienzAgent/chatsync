@@ -92,3 +92,5 @@ Beeper could not start the chat ({0}). Is the number registered on this network?
 Beeper Type,Beeper-Typ,
 "Beeper's message type for kinds the chat view cannot show (e.g. STICKER, LOCATION)","Nachrichtentyp aus Beeper für Arten, die die Chat-Ansicht nicht anzeigen kann (z. B. STICKER, LOCATION)",
 Chat,Chat,Contact action
+Only possible in a browser session.,Nur in einer Browser-Sitzung möglich.,
+This chat already belongs to another contact ({0}).,Dieser Chat gehört bereits zu einem anderen Kontakt ({0}).,

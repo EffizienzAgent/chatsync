@@ -18,7 +18,7 @@ permission_query_conditions = {
 }
 
 has_permission = {
-	"Chat Account": "chatsync.permissions.has_permission",
+	"Chat Account": "chatsync.permissions.chat_account_permission",
 	"Chat": "chatsync.permissions.has_permission",
 	"Chat Message": "chatsync.permissions.has_permission",
 }

@@ -58,3 +58,37 @@ class TestPermissions(IntegrationTestCase):
 		self.assertEqual(frappe.get_list("Chat Message", pluck="name"), [])
 		self.assertFalse(frappe.has_permission("Chat", doc=self.chat_a, user=self.user_b))
 		self.assertFalse(frappe.has_permission("Chat Message", doc=self.message, user=self.user_b))
+
+	def test_create_on_foreign_parent_is_refused(self):
+		chat = frappe.new_doc("Chat")
+		chat.update({"account": self.account.name, "beeper_chat_id": f"!{tag()}:beeper.local"})
+		message = frappe.new_doc("Chat Message")
+		message.update({"chat": self.chat_a.name, "beeper_message_id": tag()})
+		self.assertFalse(frappe.has_permission("Chat", "create", doc=chat, user=self.user_b))
+		self.assertFalse(frappe.has_permission("Chat Message", "create", doc=message, user=self.user_b))
+		self.assertTrue(frappe.has_permission("Chat", "create", doc=chat, user=self.user_a))
+		self.assertTrue(frappe.has_permission("Chat Message", "create", doc=message, user=self.user_a))
+
+	def test_new_doc_without_parent_is_left_to_validation(self):
+		self.assertTrue(frappe.has_permission("Chat", "create", doc=frappe.new_doc("Chat"), user=self.user_a))
+
+	def test_administrator_and_jobs_bypass(self):
+		self.assertIn(self.chat_a.name, frappe.get_list("Chat", pluck="name", user="Administrator"))
+		frappe.set_user(self.user_b)
+		self.assertEqual(frappe.get_list("Chat", pluck="name"), [])
+		frappe.flags.in_job = True
+		self.addCleanup(setattr, frappe.flags, "in_job", False)
+		self.assertIn(self.chat_a.name, frappe.get_list("Chat", pluck="name"))
+		self.assertIn(self.message.name, frappe.get_list("Chat Message", pluck="name"))
+
+	def test_chat_account_visibility(self):
+		other = make_user("c", ["Chat User"])
+		self.addCleanup(frappe.delete_doc, "User", other, force=True, ignore_permissions=True)
+		frappe.set_user(self.user_a)
+		self.assertEqual(frappe.get_list("Chat Account", pluck="name"), [self.account.name])
+		frappe.set_user(other)
+		self.assertEqual(frappe.get_list("Chat Account", pluck="name"), [])
+		self.assertFalse(frappe.has_permission("Chat Account", doc=self.account, user=other))
+		frappe.set_user(self.user_b)
+		self.assertEqual(frappe.get_list("Chat Account", pluck="name"), [self.account.name])
+		self.assertTrue(frappe.has_permission("Chat Account", "write", doc=self.account, user=self.user_b))

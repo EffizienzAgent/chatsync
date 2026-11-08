@@ -9,7 +9,9 @@ def is_unrestricted(user: str) -> bool:
 
 def owner_of(doc) -> str | None:
 	if doc.doctype == "Chat Message":
-		return frappe.db.get_value("Chat", doc.chat, "user")
+		return frappe.db.get_value("Chat", doc.chat, "user") if doc.chat else None
+	if doc.doctype == "Chat" and doc.is_new():
+		return frappe.db.get_value("Chat Account", doc.account, "user") if doc.account else None
 	return doc.get(OWNER_FIELD[doc.doctype])
 
 
@@ -27,8 +29,20 @@ def conditions_for(doctype: str, user: str | None) -> str:
 	return "" if is_unrestricted(user) else condition(doctype, user)
 
 
+def is_account_admin(user: str) -> bool:
+	return is_unrestricted(user) or "System Manager" in frappe.get_roles(user)
+
+
 def chat_account_conditions(user=None) -> str:
-	return conditions_for("Chat Account", user)
+	user = user or frappe.session.user
+	return "" if is_account_admin(user) else condition("Chat Account", user)
+
+
+def chat_account_permission(doc, ptype=None, user=None, debug=False) -> bool:
+	user = user or frappe.session.user
+	if is_account_admin(user) or doc.is_new():
+		return True
+	return doc.user == user
 
 
 def query_conditions(user=None) -> str:
@@ -41,6 +55,9 @@ def chat_message_conditions(user=None) -> str:
 
 def has_permission(doc, ptype=None, user=None, debug=False) -> bool:
 	user = user or frappe.session.user
-	if is_unrestricted(user) or doc.is_new():
+	if is_unrestricted(user):
 		return True
-	return owner_of(doc) == user
+	owner = owner_of(doc)
+	if owner is None and doc.is_new():
+		return True
+	return owner == user

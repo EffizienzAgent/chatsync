@@ -36,6 +36,11 @@ def commit() -> None:
 		frappe.db.commit()
 
 
+def rollback() -> None:
+	if not frappe.flags.in_test:
+		frappe.db.rollback()
+
+
 def fail(account: str | None, error: Exception) -> None:
 	frappe.log_error(title=f"Chat Sync failed: {error}")
 	if account:
@@ -70,6 +75,7 @@ def sync_account(account: str) -> None:
 				raise
 			except Exception as e:
 				failed.append(str(e))
+				rollback()
 				frappe.log_error(title=f"Chat Sync failed for chat {cp.beeper_chat_id}: {e}")
 				continue
 			commit()

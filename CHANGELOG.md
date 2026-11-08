@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.0](https://github.com/EffizienzAgent/chatsync/compare/v0.2.0...v0.3.0) (2026-11-08)
+
+
+### Features
+
+* chat action on the contact timeline that opens or starts a chat ([228a53c](https://github.com/EffizienzAgent/chatsync/commit/228a53c0d96b1e74bbfdb36030d9612ca517f35b))
+* list conversations for the chat inbox ([bfd6002](https://github.com/EffizienzAgent/chatsync/commit/bfd60020441c9f648cf8552b79bd63261bb37895))
+* logo, apps screen entry and social preview ([4ec87a0](https://github.com/EffizienzAgent/chatsync/commit/4ec87a042dadff5ac6e81298f386f28d32a9eeba))
+* merged messages of all chats with a contact ([7479e4e](https://github.com/EffizienzAgent/chatsync/commit/7479e4eb3407b658d033ed30a0e5272d56d2b2d1))
+* start chats from a contact, preview unassigned chats, keep Beeper type of unsupported messages ([023f658](https://github.com/EffizienzAgent/chatsync/commit/023f658786a4dda9934e07a46d1472a32a595d9e))
+* two-pane chat inbox with merged conversations per contact ([335c316](https://github.com/EffizienzAgent/chatsync/commit/335c3165a4aab824efd93dffccdbebb6055f0a20))
+
+
+### Bug Fixes
+
+* polish chat view after visual check (markup-free previews, sticky bottom, dark mode chips) ([feb7a2f](https://github.com/EffizienzAgent/chatsync/commit/feb7a2f19b6d92bf4a4a8293e55d3b021174fc70))
+* start_chat keeps chats of other contacts, escapes Beeper strings in the UI ([b4849fa](https://github.com/EffizienzAgent/chatsync/commit/b4849fa2ebd24540a7f86768ec78d0660aee5b83))
+
+
+### Documentation
+
+* Docker Compose guide for Beeper Server, README for conversations and chat start ([c74f9b8](https://github.com/EffizienzAgent/chatsync/commit/c74f9b89ad41ed179d216c463346e1f7b5039821))
+
 ## [0.2.0](https://github.com/EffizienzAgent/chatsync/compare/v0.1.0...v0.2.0) (2026-11-08)
 
 

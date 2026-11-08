@@ -2,13 +2,12 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
 from chatsync import api, sync
 from chatsync.messages import upsert
-from chatsync.tests.helpers import tag
+from chatsync.tests.helpers import ChatsyncTestCase, tag
 from chatsync.tests.test_assignment import AssignmentBeeper
 from chatsync.tests.test_matching import make_contact
 from chatsync.tests.test_permissions import make_user
@@ -37,8 +36,9 @@ def fake_request(method="POST", authorization=None):
 	return Request(environ.get_environ())
 
 
-class TestChatView(IntegrationTestCase):
+class TestChatView(ChatsyncTestCase):
 	def setUp(self):
+		super().setUp()
 		self.addCleanup(frappe.db.rollback)
 		self.addCleanup(frappe.set_user, "Administrator")
 		frappe.db.delete("Chat Account", {"user": USER})

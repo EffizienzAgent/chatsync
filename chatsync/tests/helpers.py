@@ -2,6 +2,7 @@ import uuid
 from unittest.mock import patch
 
 import frappe
+from frappe.tests import IntegrationTestCase
 
 
 def tag():
@@ -19,3 +20,10 @@ def use_hooks(case, **hooks):
 	patcher = patch.object(frappe, "get_hooks", get_hooks)
 	patcher.start()
 	case.addCleanup(patcher.stop)
+
+
+class ChatsyncTestCase(IntegrationTestCase):
+	"""Pins `chatsync_contact_filter` to the default so tests behave the same in any host site."""
+
+	def setUp(self):
+		use_hooks(self, chatsync_contact_filter=[])

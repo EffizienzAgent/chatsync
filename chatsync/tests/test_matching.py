@@ -1,9 +1,8 @@
 import frappe
-from frappe.tests import IntegrationTestCase
 
 from chatsync.matching import Counterpart, Match, counterpart, match, phone_index
 from chatsync.phone import normalize
-from chatsync.tests.helpers import tag, use_hooks
+from chatsync.tests.helpers import ChatsyncTestCase, tag, use_hooks
 
 USER = "Administrator"
 
@@ -28,8 +27,9 @@ def cp(phone=None, chat_id=None, username=None, participant_id="@x:beeper.local"
 	return Counterpart("whatsapp", chat_id or f"!{tag()}:beeper.local", participant_id, phone, username, None)
 
 
-class TestMatching(IntegrationTestCase):
+class TestMatching(ChatsyncTestCase):
 	def setUp(self):
+		super().setUp()
 		self.addCleanup(frappe.db.rollback)
 		self.number = f"+4915{int(tag()[:7], 16) % 10**8:08d}"
 

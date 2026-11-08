@@ -1,12 +1,11 @@
 from unittest.mock import MagicMock, patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
 
 from chatsync import api, sync, transcription, voice
 from chatsync.beeper import BeeperError
 from chatsync.messages import upsert
-from chatsync.tests.helpers import tag
+from chatsync.tests.helpers import ChatsyncTestCase, tag
 from chatsync.tests.test_assignment import AssignmentBeeper
 from chatsync.tests.test_matching import make_contact
 from chatsync.tests.test_permissions import make_user
@@ -30,8 +29,9 @@ class VoiceBeeper(AssignmentBeeper):
 		return self.audio
 
 
-class TestVoice(IntegrationTestCase):
+class TestVoice(ChatsyncTestCase):
 	def setUp(self):
+		super().setUp()
 		self.addCleanup(frappe.db.rollback)
 		self.addCleanup(frappe.set_user, "Administrator")
 		frappe.db.delete("Chat Account", {"user": USER})

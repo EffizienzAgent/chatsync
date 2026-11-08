@@ -2,12 +2,11 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
 
 from chatsync import sync
 from chatsync.beeper import BeeperError
 from chatsync.messages import upsert
-from chatsync.tests.helpers import tag
+from chatsync.tests.helpers import ChatsyncTestCase, tag
 from chatsync.tests.test_matching import make_contact
 
 USER = "Administrator"
@@ -69,8 +68,9 @@ class FakeBeeper:
 		return pages[page], str(page + 1) if page + 1 < len(pages) else None
 
 
-class TestSync(IntegrationTestCase):
+class TestSync(ChatsyncTestCase):
 	def setUp(self):
+		super().setUp()
 		self.addCleanup(frappe.db.rollback)
 		frappe.db.delete("Chat Account", {"user": USER})
 		self.account = frappe.get_doc(

@@ -1,7 +1,6 @@
 import frappe
-from frappe.tests import IntegrationTestCase
 
-from chatsync.tests.helpers import tag
+from chatsync.tests.helpers import ChatsyncTestCase, tag
 
 
 def make_user(label, roles):
@@ -13,8 +12,9 @@ def make_user(label, roles):
 	return user.name
 
 
-class TestPermissions(IntegrationTestCase):
+class TestPermissions(ChatsyncTestCase):
 	def setUp(self):
+		super().setUp()
 		self.user_a = make_user("a", ["Chat User"])
 		self.user_b = make_user("b", ["System Manager", "Chat User"])
 		self.account = frappe.get_doc(

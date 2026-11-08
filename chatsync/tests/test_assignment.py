@@ -1,10 +1,9 @@
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
 
 from chatsync import api, sync
-from chatsync.tests.helpers import tag
+from chatsync.tests.helpers import ChatsyncTestCase, tag
 from chatsync.tests.test_matching import make_contact
 from chatsync.tests.test_permissions import make_user
 from chatsync.tests.test_sync import USER, FakeBeeper, chat_json, message
@@ -20,8 +19,9 @@ class AssignmentBeeper(FakeBeeper):
 		return [c for c in self.chat_items if query.lower() in c["title"].lower()]
 
 
-class TestAssignment(IntegrationTestCase):
+class TestAssignment(ChatsyncTestCase):
 	def setUp(self):
+		super().setUp()
 		self.addCleanup(frappe.db.rollback)
 		self.addCleanup(frappe.set_user, "Administrator")
 		frappe.db.delete("Chat Account", {"user": USER})

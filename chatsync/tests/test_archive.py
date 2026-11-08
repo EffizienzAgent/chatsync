@@ -4,11 +4,10 @@ from datetime import datetime
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
 
 from chatsync import api, sync
 from chatsync.messages import upsert
-from chatsync.tests.helpers import tag
+from chatsync.tests.helpers import ChatsyncTestCase, tag
 from chatsync.tests.test_assignment import AssignmentBeeper
 from chatsync.tests.test_matching import make_contact
 from chatsync.tests.test_permissions import make_user
@@ -18,8 +17,9 @@ INSTALLED = "docarchive" in frappe.get_installed_apps()
 
 
 @unittest.skipUnless(INSTALLED, "docarchive is not installed")
-class TestArchive(IntegrationTestCase):
+class TestArchive(ChatsyncTestCase):
 	def setUp(self):
+		super().setUp()
 		from docarchive.tests.factories import make_own_company, make_settings
 
 		self.addCleanup(frappe.db.rollback)

@@ -64,7 +64,7 @@ Send via,Senden über,Chat View
 Send,Senden,Chat View
 No matches,Keine Treffer,Chat View
 No conversations yet,Noch keine Unterhaltungen,Chat View
-You: ,Du: ,Chat View
+You,Du,Chat View
 Message via {0},Nachricht über {0},Chat View
 No chat to reply to,Kein Chat zum Antworten,Chat View
 Move {0} chat to another contact,{0}-Chat anderem Kontakt zuordnen,Chat View
@@ -91,3 +91,4 @@ Beeper could not start the chat ({0}). Is the number registered on this network?
 "This chat is already assigned, open it in the chat view.","Dieser Chat ist bereits zugeordnet, bitte in der Chat-Ansicht öffnen.",
 Beeper Type,Beeper-Typ,
 "Beeper's message type for kinds the chat view cannot show (e.g. STICKER, LOCATION)","Nachrichtentyp aus Beeper für Arten, die die Chat-Ansicht nicht anzeigen kann (z. B. STICKER, LOCATION)",
+Chat,Chat,Contact action

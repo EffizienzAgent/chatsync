@@ -86,7 +86,11 @@ class ChatView {
 		this.$scroll = $(`<div class="chat-scroll"></div>`).appendTo(this.$conversation);
 		this.$more = $(`<div class="chat-more"></div>`).appendTo(this.$scroll);
 		this.$list = $(`<div class="chat-messages"></div>`).appendTo(this.$scroll);
-		this.$scroll.on("scroll", () => this.$scroll.scrollTop() < 40 && this.load_older());
+		this.$scroll.on("scroll", () => {
+			const scroll = this.$scroll[0];
+			this.at_bottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
+			if (scroll.scrollTop < 40) this.load_older();
+		});
 		this.make_composer();
 	}
 
@@ -178,7 +182,7 @@ class ChatView {
 		$(`<span class="chat-row-title"></span>`).text(row.title).appendTo($top);
 		$(`<span class="chat-row-time"></span>`).text(this.short_time(row.last_message_at)).appendTo($top);
 		const $bottom = $(`<div class="chat-row-bottom"></div>`).appendTo($text);
-		const prefix = row.direction === "Out" ? __("You: ", null, CONTEXT) : "";
+		const prefix = row.direction === "Out" ? `${__("You", null, CONTEXT)}: ` : "";
 		$(`<span class="chat-row-preview"></span>`).text(prefix + (row.preview || "")).appendTo($bottom);
 		const $networks = $(`<span class="chat-row-networks"></span>`).appendTo($bottom);
 		row.networks.forEach((label) => network_chip(label).appendTo($networks));
@@ -244,7 +248,6 @@ class ChatView {
 		this.$body.addClass("chat-open");
 		this.$empty.hide();
 		this.$conversation.show();
-		this.page.set_title(this.title);
 		this.render_header();
 		this.render_networks();
 		this.render_actions();
@@ -402,7 +405,9 @@ class ChatView {
 		if (item.too_large) return this.too_large();
 		const url = this.media_url(message, index);
 		if (item.type === "img" && (!item.mime_type || IMAGE_TYPES.includes(item.mime_type))) {
-			const $image = $(`<img class="chat-image" loading="lazy">`).attr({ src: url, alt: item.file_name || "" });
+			const $image = $(`<img class="chat-image" loading="lazy">`)
+				.attr({ src: url, alt: item.file_name || "" })
+				.on("load", () => this.at_bottom && this.scroll_to_bottom());
 			return $(`<a class="chat-media" target="_blank" rel="noopener noreferrer"></a>`).attr("href", url).append($image);
 		}
 		if (item.type === "video" && VIDEO_TYPES.includes(item.mime_type)) {
@@ -516,10 +521,12 @@ class ChatView {
 		}
 		const target = this.$list.find(".chat-day").filter((_, el) => $(el).attr("data-day") >= day)[0];
 		if (!target) return this.scroll_to_bottom();
+		this.at_bottom = false;
 		this.$scroll.scrollTop(target.offsetTop - this.$scroll[0].offsetTop);
 	}
 
 	scroll_to_bottom() {
+		this.at_bottom = true;
 		this.$scroll.scrollTop(this.$scroll[0].scrollHeight);
 	}
 

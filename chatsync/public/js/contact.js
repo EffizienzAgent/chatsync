@@ -9,7 +9,7 @@ frappe.ui.form.on("Contact", {
 function add_chat_action(frm) {
 	const actions = frm.timeline?.timeline_actions_wrapper;
 	if (!frappe.boot.chatsync_can_chat || !actions || actions.find(".chatsync-chat").length) return;
-	frm.timeline.add_action_button(__("Chat"), () => open_chat(frm), "message-circle").addClass("chatsync-chat");
+	frm.timeline.add_action_button(__("Chat", null, "Contact action"), () => open_chat(frm), "message-circle").addClass("chatsync-chat");
 }
 
 async function open_chat(frm) {

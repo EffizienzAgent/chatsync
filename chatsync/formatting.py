@@ -123,3 +123,12 @@ def plain(text: str | None) -> str:
 	text = html.unescape(nh3.clean(text, tags=set()))
 	text = re.sub(r"[ \t]*\n[ \t]*", "\n", text)
 	return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def preview(text: str | None) -> str:
+	"""One line of text without markup (HTML or WhatsApp style), for lists."""
+	if not text:
+		return ""
+	if is_html(text):
+		return " ".join(plain(text).split())
+	return " ".join(html.unescape(nh3.clean(render_markup(text).replace("<br>", " "), tags=set())).split())

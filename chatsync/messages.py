@@ -96,7 +96,7 @@ def preview(raw: dict) -> dict:
 
 def summary_text(row) -> str:
 	"""One line for lists: plain text, with a marker for media."""
-	text = " ".join(formatting.plain(row.get("text")).split())
+	text = formatting.preview(row.get("text"))
 	if row.get("kind") == "Voice":
 		return f"🎤 {row.get('transcript') or frappe._('Voice message')}"
 	if row.get("kind") == "Image":

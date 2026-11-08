@@ -116,3 +116,13 @@ class TestPlain(ChatsyncTestCase):
 
 	def test_empty(self):
 		self.assertEqual(plain(None), "")
+
+
+class TestPreview(ChatsyncTestCase):
+	def test_preview_drops_markup(self):
+		from chatsync.formatting import preview
+
+		self.assertEqual(preview("`Code` und ~weg~ & *fett*\nneu"), "Code und weg & fett neu")
+		self.assertEqual(preview("<p>Hi <b>Max</b> &amp; Co</p><p>LG</p>"), "Hi Max & Co LG")
+		self.assertEqual(preview("a < b"), "a < b")
+		self.assertEqual(preview(None), "")

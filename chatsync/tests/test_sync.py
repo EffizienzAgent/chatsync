@@ -300,6 +300,28 @@ class TestSync(ChatsyncTestCase):
 			self.run_with(FakeBeeper([chat], {chat["id"]: [[message(chat["id"], 0, "late")]]}))
 		self.assertEqual(frappe.db.count("Chat Message", {"chat": name}), 0)
 
+	def test_interrupted_history_import_resumes_at_its_cursor(self):
+		chat = chat_json(self.number)
+		self.run_with(FakeBeeper([chat], {chat["id"]: [[]]}))
+		name = self.chats()[0].name
+		pages = [
+			[message(chat["id"], 1, "a")],
+			[message(chat["id"], 40, "b")],
+			[message(chat["id"], 80, "c")],
+		]
+		fake = FakeBeeper([chat], {chat["id"]: pages})
+		fake.fail_on = (chat["id"], 1)
+		self.run_with(fake, sync.import_history, name)
+		row = frappe.db.get_value("Chat", name, ["history_cursor", "history_complete"], as_dict=True)
+		self.assertEqual((row.history_cursor, row.history_complete), ("1", 0))
+		fake.fail_on = None
+		fake.calls.clear()
+		self.run_with(fake, sync.import_history, name)
+		self.assertEqual([page for _chat, page in fake.calls], [1, 2])
+		row = frappe.db.get_value("Chat", name, ["history_cursor", "history_complete"], as_dict=True)
+		self.assertEqual((row.history_cursor, row.history_complete), (None, 1))
+		self.assertEqual(self.texts(name), ["c", "b", "a"])
+
 	def test_contact_update_ignores_unrelated_changes(self):
 		with patch.object(sync, "enqueue") as enqueue:
 			doc = frappe.get_doc("Contact", self.contact)

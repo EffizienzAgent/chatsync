@@ -205,14 +205,16 @@ def update_cursor(chat: str, newest_sort_key: str | None) -> None:
 
 
 def import_history(chat: str) -> None:
-	values = frappe.db.get_value("Chat", chat, ["beeper_chat_id", "account", "newest_sort_key"])
+	"""Pages back through the whole chat, committing each page; a cut-off run resumes at its cursor."""
+	values = frappe.db.get_value(
+		"Chat", chat, ["beeper_chat_id", "account", "newest_sort_key", "history_cursor"]
+	)
 	if not values:
 		return
-	beeper_chat_id, account, newest = values
+	beeper_chat_id, account, newest, cursor = values
 	doc = frappe.get_doc("Chat Account", account)
 	try:
 		client = client_for(doc)
-		cursor = None
 		while True:
 			items, cursor = client.messages(beeper_chat_id, cursor)
 			for raw in items:
@@ -220,15 +222,17 @@ def import_history(chat: str) -> None:
 				if not newest or sort_order(raw.get("sortKey")) > sort_order(newest):
 					newest = raw.get("sortKey")
 			update_cursor(chat, newest)
-			if not kept(chat):
+			done = not cursor or not items
+			frappe.db.set_value(
+				"Chat",
+				chat,
+				{"history_cursor": None if done else cursor, "history_complete": int(done)},
+				update_modified=False,
+			)
+			if not kept(chat) or done:
 				return
-			if not cursor or not items:
-				break
 	except BeeperError as e:
 		fail(account, e)
-		return
-	frappe.db.set_value("Chat", chat, "history_complete", 1, update_modified=False)
-	commit()
 
 
 def rematch_contact(contact: str) -> None:

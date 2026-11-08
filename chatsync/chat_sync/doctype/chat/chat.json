@@ -18,6 +18,7 @@
   "contact",
   "history_requested",
   "history_complete",
+  "history_cursor",
   "last_message_at",
   "newest_sort_key"
  ],
@@ -86,6 +87,14 @@
    "fieldname": "history_complete",
    "fieldtype": "Check",
    "label": "History Complete"
+  },
+  {
+   "fieldname": "history_cursor",
+   "fieldtype": "Small Text",
+   "label": "History Cursor",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1
   },
   {
    "fieldname": "last_message_at",

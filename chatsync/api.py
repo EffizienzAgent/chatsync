@@ -5,7 +5,7 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime
 
-from chatsync import formatting, messages, sync
+from chatsync import formatting, messages, networks, sync
 from chatsync.beeper import BeeperError
 from chatsync.matching import counterpart, match_chat, phone_contacts, phone_index
 
@@ -248,11 +248,16 @@ def serialize(row: dict) -> dict:
 	}
 
 
-def newest_first(chat: str, before: str | None, limit: int) -> list[dict]:
+def newest_first(chats: str | list[str], before: str | None, limit: int) -> list[dict]:
+	chats = [chats] if isinstance(chats, str) else chats
 	table = frappe.qb.DocType("Chat Message")
-	query = frappe.qb.from_(table).select(*[table[f] for f in MESSAGE_FIELDS]).where(table.chat == chat)
+	query = (
+		frappe.qb.from_(table)
+		.select(table.chat, *[table[f] for f in MESSAGE_FIELDS])
+		.where(table.chat.isin(chats))
+	)
 	if before:
-		sent_at = frappe.db.get_value("Chat Message", {"name": before, "chat": chat}, "sent_at")
+		sent_at = frappe.db.get_value("Chat Message", {"name": before, "chat": ["in", chats]}, "sent_at")
 		if sent_at:
 			query = query.where(
 				(table.sent_at < sent_at) | ((table.sent_at == sent_at) & (table.name < before))
@@ -278,10 +283,73 @@ def get_messages(chat: str, before: str | None = None, limit: int = 200) -> dict
 		"chat": {
 			"title": title,
 			"network": network,
+			"network_label": networks.label(network),
 			"contact": contact,
 			"contact_name": contact_name(contact),
 		},
 		"messages": [serialize(r) for r in rows],
+		"has_more": has_more,
+		"archive_available": "docarchive" in frappe.get_installed_apps(),
+	}
+
+
+def own_chats(contact: str) -> list[dict]:
+	"""The session user's chats with the contact; other users' chats stay out, even for Administrator."""
+	chats = frappe.get_list(
+		"Chat",
+		filters={"contact": contact, "user": frappe.session.user},
+		fields=["name", "network", "title", "last_message_at"],
+		order_by="last_message_at desc, creation desc",
+	)
+	if not chats:
+		return []
+	table = frappe.qb.DocType("Chat Message")
+	incoming = dict(
+		frappe.qb.from_(table)
+		.select(table.chat, frappe.qb.functions("MAX", table.sent_at))
+		.where(table.chat.isin([c.name for c in chats]) & (table.direction == "In"))
+		.groupby(table.chat)
+		.run()
+	)
+	return [
+		{
+			"name": c.name,
+			"network": c.network,
+			"network_label": networks.label(c.network),
+			"title": c.title,
+			"last_message_at": c.last_message_at,
+			"last_incoming_at": incoming.get(c.name),
+		}
+		for c in chats
+	]
+
+
+def default_chat(chats: list[dict]) -> str | None:
+	incoming = [c for c in chats if c["last_incoming_at"]]
+	if incoming:
+		return max(incoming, key=lambda c: c["last_incoming_at"])["name"]
+	return chats[0]["name"] if chats else None
+
+
+@frappe.whitelist(methods=["GET"])
+def get_contact_messages(contact: str, before: str | None = None, limit: int = 200) -> dict:
+	"""All of the user's chats with a contact as one conversation; `before` works as in get_messages."""
+	check_contact(contact)
+	limit = max(1, min(int(limit), 500))
+	chats = own_chats(contact)
+	by_name = {c["name"]: c for c in chats}
+	rows = newest_first(list(by_name), before, limit) if chats else []
+	has_more = len(rows) > limit
+	result = []
+	for row in rows[:limit][::-1]:
+		chat = by_name[row["chat"]]
+		result.append({**serialize(row), "network": chat["network"], "network_label": chat["network_label"]})
+	return {
+		"contact": contact,
+		"contact_name": contact_name(contact),
+		"chats": chats,
+		"default_chat": default_chat(chats),
+		"messages": result,
 		"has_more": has_more,
 		"archive_available": "docarchive" in frappe.get_installed_apps(),
 	}

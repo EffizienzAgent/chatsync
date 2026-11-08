@@ -1,0 +1,49 @@
+{
+ "doctype": "DocType",
+ "name": "Chat Identifier",
+ "module": "Chat Sync",
+ "engine": "InnoDB",
+ "custom": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "field_order": [
+  "network",
+  "beeper_chat_id",
+  "identifier",
+  "display_name",
+  "excluded"
+ ],
+ "fields": [
+  {
+   "fieldname": "network",
+   "fieldtype": "Data",
+   "label": "Network",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "beeper_chat_id",
+   "fieldtype": "Data",
+   "label": "Beeper Chat ID"
+  },
+  {
+   "fieldname": "identifier",
+   "fieldtype": "Data",
+   "label": "Identifier",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "display_name",
+   "fieldtype": "Data",
+   "label": "Display Name",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "excluded",
+   "fieldtype": "Check",
+   "label": "Excluded",
+   "in_list_view": 1
+  }
+ ],
+ "istable": 1,
+ "editable_grid": 1
+}

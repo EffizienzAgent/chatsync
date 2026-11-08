@@ -1,0 +1,55 @@
+{
+ "doctype": "DocType",
+ "name": "Chat Sync Settings",
+ "module": "Chat Sync",
+ "engine": "InnoDB",
+ "custom": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "field_order": [
+  "phone_region",
+  "initial_days",
+  "transcription_provider",
+  "mistral_api_key",
+  "mistral_model"
+ ],
+ "fields": [
+  {
+   "fieldname": "phone_region",
+   "fieldtype": "Data",
+   "label": "Phone Region",
+   "default": "DE"
+  },
+  {
+   "fieldname": "initial_days",
+   "fieldtype": "Int",
+   "label": "Initial Days",
+   "default": "14"
+  },
+  {
+   "fieldname": "transcription_provider",
+   "fieldtype": "Select",
+   "label": "Transcription Provider",
+   "options": "\nMistral"
+  },
+  {
+   "fieldname": "mistral_api_key",
+   "fieldtype": "Password",
+   "label": "Mistral API Key"
+  },
+  {
+   "fieldname": "mistral_model",
+   "fieldtype": "Data",
+   "label": "Mistral Model",
+   "default": "voxtral-mini-transcribe-3"
+  }
+ ],
+ "issingle": 1,
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1
+  }
+ ]
+}

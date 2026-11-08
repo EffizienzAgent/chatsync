@@ -1,0 +1,111 @@
+{
+ "doctype": "DocType",
+ "name": "Chat",
+ "module": "Chat Sync",
+ "engine": "InnoDB",
+ "custom": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "field_order": [
+  "account",
+  "user",
+  "network",
+  "beeper_chat_id",
+  "title",
+  "counterpart_id",
+  "counterpart_phone",
+  "counterpart_username",
+  "contact",
+  "history_complete",
+  "last_message_at",
+  "newest_sort_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "account",
+   "fieldtype": "Link",
+   "label": "Account",
+   "options": "Chat Account",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "read_only": 1,
+   "fetch_from": "account.user"
+  },
+  {
+   "fieldname": "network",
+   "fieldtype": "Data",
+   "label": "Network",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "beeper_chat_id",
+   "fieldtype": "Data",
+   "label": "Beeper Chat ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "counterpart_id",
+   "fieldtype": "Data",
+   "label": "Counterpart ID"
+  },
+  {
+   "fieldname": "counterpart_phone",
+   "fieldtype": "Data",
+   "label": "Counterpart Phone"
+  },
+  {
+   "fieldname": "counterpart_username",
+   "fieldtype": "Data",
+   "label": "Counterpart Username"
+  },
+  {
+   "fieldname": "contact",
+   "fieldtype": "Link",
+   "label": "Contact",
+   "options": "Contact"
+  },
+  {
+   "fieldname": "history_complete",
+   "fieldtype": "Check",
+   "label": "History Complete"
+  },
+  {
+   "fieldname": "last_message_at",
+   "fieldtype": "Datetime",
+   "label": "Last Message At"
+  },
+  {
+   "fieldname": "newest_sort_key",
+   "fieldtype": "Data",
+   "label": "Newest Sort Key"
+  }
+ ],
+ "autoname": "hash",
+ "title_field": "title",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  },
+  {
+   "role": "Chat User",
+   "read": 1,
+   "write": 1,
+   "create": 1
+  }
+ ]
+}

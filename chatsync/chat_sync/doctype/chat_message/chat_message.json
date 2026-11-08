@@ -1,0 +1,103 @@
+{
+ "doctype": "DocType",
+ "name": "Chat Message",
+ "module": "Chat Sync",
+ "engine": "InnoDB",
+ "custom": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "field_order": [
+  "chat",
+  "beeper_message_id",
+  "sort_key",
+  "sent_at",
+  "direction",
+  "sender_name",
+  "kind",
+  "text",
+  "media_url",
+  "transcript",
+  "transcript_provider"
+ ],
+ "fields": [
+  {
+   "fieldname": "chat",
+   "fieldtype": "Link",
+   "label": "Chat",
+   "options": "Chat",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "beeper_message_id",
+   "fieldtype": "Data",
+   "label": "Beeper Message ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sort_key",
+   "fieldtype": "Data",
+   "label": "Sort Key"
+  },
+  {
+   "fieldname": "sent_at",
+   "fieldtype": "Datetime",
+   "label": "Sent At",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "direction",
+   "fieldtype": "Select",
+   "label": "Direction",
+   "options": "\nIn\nOut"
+  },
+  {
+   "fieldname": "sender_name",
+   "fieldtype": "Data",
+   "label": "Sender Name"
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "label": "Kind",
+   "options": "\nText\nVoice\nImage\nFile\nOther"
+  },
+  {
+   "fieldname": "text",
+   "fieldtype": "Long Text",
+   "label": "Text"
+  },
+  {
+   "fieldname": "media_url",
+   "fieldtype": "Small Text",
+   "label": "Media URL"
+  },
+  {
+   "fieldname": "transcript",
+   "fieldtype": "Long Text",
+   "label": "Transcript"
+  },
+  {
+   "fieldname": "transcript_provider",
+   "fieldtype": "Data",
+   "label": "Transcript Provider"
+  }
+ ],
+ "autoname": "hash",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  },
+  {
+   "role": "Chat User",
+   "read": 1,
+   "write": 1,
+   "create": 1
+  }
+ ]
+}

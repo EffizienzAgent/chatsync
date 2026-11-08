@@ -8,9 +8,9 @@ networks Beeper bridges end up in one place.
 - **One account per user.** Each user adds a **Chat Account** with the Beeper Server's base URL and
   a token. Chats and messages are visible only to their owner.
 - **Direct chats only.** Group chats are ignored.
-- **Matching.** WhatsApp and Signal chats are matched to a contact by phone number; chats of other
-  networks are assigned by hand ("Assign chat" on the Contact). Chats without a matching contact
-  are never stored.
+- **Matching.** A direct chat whose counterpart exposes a phone number (typically WhatsApp and
+  Signal) is matched to a contact by that number; all other chats are assigned by hand ("Assign
+  chat" on the Contact). Chats without a matching contact are never stored.
 - **Chat view.** Read the history, play voice notes, send text messages, archive a conversation.
 - **Voice notes.** Streamed from the Beeper Server on demand and never stored. Transcription on
   demand through Mistral.
@@ -48,12 +48,12 @@ The scheduler syncs every two minutes. Token and transcription keys are stored a
 
 ## How chats are matched
 
-- A chat that is already assigned to a contact stays with it. The match is stored as a row in the
-  contact's chat identifiers.
-- Otherwise WhatsApp and Signal chats are matched by phone number: contact numbers and the chat's
+- A chat that is already assigned to a contact stays with it. A manual assignment is stored as a row
+  in the contact's chat identifiers.
+- Otherwise a chat whose counterpart exposes a phone number (typically WhatsApp and Signal) is matched by it: contact numbers and the chat's
   number are normalised to E.164 with the region from *Chat Sync Settings*. Exactly one readable
   contact must match; two matches are ambiguous and left alone.
-- Other networks have no phone number to go by. Use **Assign chat** on the Contact, or create a new
+- Chats without a phone number have nothing to match on. Use **Assign chat** on the Contact, or create a new
   contact from an unassigned chat.
 - Unassigning a chat removes its messages and marks the chat as excluded for that contact, so it is
   not matched again.
@@ -71,8 +71,9 @@ What gets imported:
 
 - Only chats with a matching or assigned contact are stored. Messages of everything else never
   reach the database.
-- Chats and messages are visible only to their owner. The **System Manager** role has no bypass;
-  it can manage Chat Accounts but not read other users' chats.
+- Chats and messages are visible only to their owner. The exceptions are the built-in
+  **Administrator** user and the site's background jobs (the sync). The **System Manager** role has
+  no bypass; it can manage Chat Accounts but not read other users' chats.
 - Voice notes are fetched from the Beeper Server when played or transcribed and are not stored.
   Only the transcript is saved with the message.
 - Sending is possible only from the chat view in a browser session. Requests that carry an
@@ -80,7 +81,8 @@ What gets imported:
   send.
 - Transcription sends the audio to Mistral (*Chat Sync Settings* → provider, API key and model).
   Leave the key empty to switch it off.
-- Archiving needs a docarchive role; the PDF contains the messages of the chosen period.
+- Archiving needs a docarchive role; the PDF contains the messages of the chosen period. Archived
+  PDFs follow docarchive's access rules, not the owner-only rule above.
 
 ## Extending
 

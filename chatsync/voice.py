@@ -20,7 +20,7 @@ def load_audio(message: str) -> tuple[bytes, str]:
 		audio, content_type = client.asset(media_url)
 	except BeeperError as e:
 		if e.status in GONE:
-			frappe.throw("Die Sprachnachricht ist in Beeper nicht mehr verfügbar.")
+			frappe.throw(frappe._("This voice message is no longer available in Beeper."))
 		frappe.throw(frappe._("The voice message could not be loaded from Beeper."))
 	if not content_type.lower().startswith("audio/"):
 		content_type = VOICE_FALLBACK

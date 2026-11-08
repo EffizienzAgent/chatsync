@@ -26,10 +26,10 @@ The filter applies to **phone matching** only. A chat whose number belongs to se
 matched when exactly one of them qualifies; when none does, the chat stays unmatched and is not
 stored. Without the hook every contact qualifies.
 
-It does not affect chats assigned by hand ("Assign chat" on the Contact) or contacts the user cannot
-read: matching only considers contacts the chat's owner has read permission for.
+The filter does not apply to chats assigned by hand ("Assign chat" on the Contact). Contacts the
+chat's owner cannot read are excluded by a separate permission check, independent of the filter.
 
-The function runs once per candidate contact on every sync, so keep it cheap.
+The function runs for each candidate contact whenever chats are matched, so keep it cheap.
 
 ## Settings
 

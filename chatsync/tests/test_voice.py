@@ -157,7 +157,7 @@ class TestVoice(IntegrationTestCase):
 			self.fake.error = BeeperError(status, "gone")
 			with self.assertRaises(frappe.ValidationError) as ctx:
 				self.play()
-			self.assertIn("Die Sprachnachricht ist in Beeper nicht mehr verfügbar.", str(ctx.exception))
+			self.assertIn("This voice message is no longer available in Beeper.", str(ctx.exception))
 
 	def test_other_beeper_error_is_generic(self):
 		self.fake.error = BeeperError(500, "boom")

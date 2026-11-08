@@ -60,9 +60,7 @@ class ChatView {
 		this.page.add_menu_item(__("Reassign to another contact", null, CONTEXT), () => this.reassign());
 		this.page.add_menu_item(__("Unassign", null, CONTEXT), () => this.unassign());
 		if (data.archive_available) {
-			this.page.add_menu_item(__("Archive", null, CONTEXT), () =>
-				$(document).trigger("chatsync:archive", [this.chat])
-			);
+			this.page.add_menu_item(__("Archive", null, CONTEXT), () => this.archive());
 		}
 	}
 
@@ -77,6 +75,32 @@ class ChatView {
 					.then((r) => {
 						dialog.hide();
 						frappe.set_route("chat-view", r.message);
+					});
+			},
+		});
+		dialog.show();
+	}
+
+	archive() {
+		const dialog = new frappe.ui.Dialog({
+			title: __("Archive", null, CONTEXT),
+			fields: [
+				{ fieldname: "date_from", fieldtype: "Date", label: __("From", null, CONTEXT) },
+				{ fieldname: "date_to", fieldtype: "Date", label: __("To", null, CONTEXT) },
+				{ fieldtype: "HTML", options: `<p class="text-muted">${__("Leave empty to archive the whole chat", null, CONTEXT)}</p>` },
+			],
+			primary_action_label: __("Archive", null, CONTEXT),
+			primary_action: ({ date_from, date_to }) => {
+				frappe
+					.call({ method: "chatsync.archive.archive_chat", type: "POST", args: { chat: this.chat, date_from, date_to } })
+					.then((r) => {
+						dialog.hide();
+						const url = frappe.utils.get_form_link("Business Document", r.message);
+						frappe.msgprint({
+							title: __("Archive", null, CONTEXT),
+							indicator: "green",
+							message: `${__("Archived", null, CONTEXT)}: <a href="${url}">${frappe.utils.escape_html(r.message)}</a>`,
+						});
 					});
 			},
 		});

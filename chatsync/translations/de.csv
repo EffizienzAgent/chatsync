@@ -32,3 +32,14 @@ This message is not a voice message.,Diese Nachricht ist keine Sprachnachricht.,
 Transcribe,Transkribieren,Chat View
 Unsupported audio format,Format wird von diesem Browser nicht unterstützt,Chat View
 Transcribing...,Wird transkribiert...,Chat View
+Archiving needs one of the roles {0},Zum Archivieren ist eine der Rollen {0} nötig,
+There are no messages in this period,In diesem Zeitraum gibt es keine Nachrichten,
+Chat with {0},Chat mit {0},
+Me,Ich,
+Contact,Kontakt,
+Network,Netzwerk,
+Period,Zeitraum,
+From,Von,Chat View
+To,Bis,Chat View
+Leave empty to archive the whole chat,Leer lassen für den gesamten Chat,Chat View
+Archived,Archiviert,Chat View

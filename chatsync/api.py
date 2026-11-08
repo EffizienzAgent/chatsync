@@ -105,9 +105,7 @@ def assign_chat(beeper_chat_id: str, contact: str) -> str:
 	raw, cp = direct_chat(sync.client_for(account), beeper_chat_id)
 	identifier = cp.username or cp.participant_id
 	with assignment_writes():
-		frappe.db.delete(
-			"Chat Identifier", {"parenttype": "Contact", "beeper_chat_id": beeper_chat_id, "excluded": 1}
-		)
+		frappe.db.delete("Chat Identifier", {"parenttype": "Contact", "beeper_chat_id": beeper_chat_id})
 		doc = frappe.get_doc("Contact", contact)
 		drop_rows(doc, beeper_chat_id)
 		doc.append(

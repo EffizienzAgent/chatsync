@@ -234,6 +234,12 @@ def contact_name(contact: str | None) -> str | None:
 	return " ".join(part for part in (first, last) if part) or contact
 
 
+def has_csrf_token() -> bool:
+	"""Frappe skips its CSRF check for sessions without a token (e.g. from POST /api/method/login)."""
+	expected = (frappe.session.data or {}).get("csrf_token")
+	return bool(expected) and frappe.get_request_header("X-Frappe-CSRF-Token") == expected
+
+
 def check_browser_session() -> None:
 	request = getattr(frappe.local, "request", None)
 	if (
@@ -241,6 +247,7 @@ def check_browser_session() -> None:
 		or request.method != "POST"
 		or frappe.get_request_header("Authorization")
 		or frappe.form_dict.get("cmd") != SEND_COMMAND
+		or not has_csrf_token()
 	):
 		frappe.throw(frappe._("Sending is only possible from the chat view."), frappe.PermissionError)
 

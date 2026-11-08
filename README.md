@@ -82,8 +82,8 @@ What gets imported:
 - Voice notes are fetched from the Beeper Server when played or transcribed and are not stored.
   Only the transcript is saved with the message.
 - Sending is possible only from the chat view in a browser session. Requests that carry an
-  `Authorization` header (API keys, OAuth) are refused, and there is no background or MCP path to
-  send.
+  `Authorization` header (API keys, OAuth), and requests without the session's CSRF token, are
+  refused, and there is no background or MCP path to send.
 - Transcription sends the audio to Mistral (*Chat Sync Settings* → provider, API key and model).
   Leave the key empty to switch it off.
 - Archiving needs a docarchive role; the PDF contains the messages of the chosen period. Archived

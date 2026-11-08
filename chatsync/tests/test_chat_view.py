@@ -30,8 +30,13 @@ class SendingBeeper(AssignmentBeeper):
 		return super().messages(chat_id, cursor, direction)
 
 
-def fake_request(method="POST", authorization=None):
+CSRF = "csrf-token-1"
+
+
+def fake_request(method="POST", authorization=None, csrf=CSRF):
 	headers = {"Authorization": authorization} if authorization else {}
+	if csrf:
+		headers["X-Frappe-CSRF-Token"] = csrf
 	environ = EnvironBuilder(method=method, path="/api/method/chatsync.api.send_message", headers=headers)
 	return Request(environ.get_environ())
 
@@ -54,10 +59,13 @@ class TestChatView(ChatsyncTestCase):
 		self.chat = api.assign_chat(self.raw["id"], make_contact(phones=[number]))
 		frappe.db.delete("Chat Message", {"chat": self.chat})
 
-	def request(self, cmd="chatsync.api.send_message", **kwargs):
+	def request(self, cmd="chatsync.api.send_message", session_csrf=CSRF, **kwargs):
 		patcher = patch.object(frappe.local, "request", fake_request(**kwargs), create=True)
 		patcher.start()
 		self.addCleanup(patcher.stop)
+		session = patch.dict(frappe.session.data, {"csrf_token": session_csrf})
+		session.start()
+		self.addCleanup(session.stop)
 		form = patch.dict(frappe.local.form_dict, {"cmd": cmd})
 		form.start()
 		self.addCleanup(form.stop)
@@ -118,6 +126,18 @@ class TestChatView(ChatsyncTestCase):
 
 	def test_refresh_is_post_only(self):
 		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[api.refresh_messages], ["POST"])
+
+	def test_send_rejects_session_without_csrf_token(self):
+		self.request(session_csrf=None)
+		with self.assertRaises(frappe.PermissionError):
+			api.send_message(self.chat, "hello")
+		self.assertEqual(self.fake.sent, [])
+
+	def test_send_rejects_wrong_csrf_header(self):
+		self.request(csrf="forged")
+		with self.assertRaises(frappe.PermissionError):
+			api.send_message(self.chat, "hello")
+		self.assertEqual(self.fake.sent, [])
 
 	def test_send_rejects_without_request(self):
 		with patch.object(frappe.local, "request", None, create=True):

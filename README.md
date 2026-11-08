@@ -11,7 +11,14 @@ networks Beeper bridges end up in one place.
 - **Matching.** A direct chat whose counterpart exposes a phone number (typically WhatsApp and
   Signal) is matched to a contact by that number; all other chats are assigned by hand ("Assign
   chat" on the Contact). Chats without a matching contact are never stored.
-- **Chat view.** Read the history, play voice notes, send text messages, archive a conversation.
+- **Chat view.** Read the history, play voice notes, view images and download files, send text
+  messages, archive a conversation. Formatting is shown: HTML from Beeper is sanitized to a small
+  allowlist (paragraphs, bold, italic, lists, quotes, code, http/https/mailto links), plain text
+  gets WhatsApp markup (`*bold*`, `_italic_`, `~strike~`, `` `code` ``, ```` ```mono``` ````), links
+  and line breaks.
+- **Images and files.** Streamed from the Beeper Server on demand and never stored. Images
+  (JPEG, PNG, GIF, WebP, checked by their bytes) are shown inline, MP4/WebM videos play inline,
+  everything else (SVG included) is offered as a download.
 - **Voice notes.** Streamed from the Beeper Server on demand and never stored. Transcription on
   demand through Mistral.
 - **Archiving.** Optionally save a conversation as a PDF to
@@ -84,14 +91,17 @@ What gets imported:
 - The **Chat User** role can only read chats and messages. Every change (assigning, unassigning,
   sending, transcribing, archiving) goes through chatsync's own endpoints, and those that change an
   existing chat are allowed for its owner only.
-- Voice notes are fetched from the Beeper Server when played or transcribed and are not stored.
-  Only the transcript is saved with the message.
+- Voice notes, images and files are fetched from the Beeper Server when opened and are not stored
+  (no File record, nothing on disk). Only their name, type and size are saved with the message, and
+  for voice notes the transcript. Messages synced before these details were kept show their first
+  attachment without name and size.
 - Sending is possible only from the chat view in a browser session. Requests that carry an
   `Authorization` header (API keys, OAuth), and requests without the session's CSRF token, are
   refused, and there is no background or MCP path to send.
 - Transcription sends the audio to Mistral (*Chat Sync Settings* → provider, API key and model).
   Leave the key empty to switch it off.
-- Archiving needs a docarchive role; the PDF contains the messages of the chosen period. Archived
+- Archiving needs a docarchive role; the PDF contains the messages of the chosen period, with
+  images and files listed by name, not embedded. Archived
   PDFs follow docarchive's access rules, not the owner-only rule above.
 
 ## Extending

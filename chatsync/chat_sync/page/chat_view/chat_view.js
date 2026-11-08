@@ -1,4 +1,6 @@
 const CONTEXT = "Chat View";
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+const VIDEO_TYPES = ["video/mp4", "video/webm"];
 
 frappe.pages["chat-view"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({ parent: wrapper, title: __("Chat"), single_column: true });
@@ -131,6 +133,8 @@ class ChatView {
 		const out = message.direction === "Out";
 		const $bubble = $(`<div class="chat-bubble"></div>`);
 		if (message.kind === "Voice" && message.has_media) this.voice_player(message).appendTo($bubble);
+		else if (["Image", "File"].includes(message.kind) && message.attachments?.length)
+			message.attachments.forEach((item, index) => this.attachment(message, item, index).appendTo($bubble));
 		else if (message.kind !== "Text") $(`<div class="chat-kind"></div>`).text(__(message.kind, null, CONTEXT)).appendTo($bubble);
 		if (message.html) $(`<div class="chat-text chat-html"></div>`).html(message.html).appendTo($bubble);
 		if (message.transcript) $(`<div class="chat-transcript"></div>`).text(message.transcript).appendTo($bubble);
@@ -140,6 +144,40 @@ class ChatView {
 			.toggleClass("out", out)
 			.attr("data-name", message.name)
 			.append($bubble);
+	}
+
+	media_url(message, index) {
+		return `/api/method/chatsync.media.serve?message=${encodeURIComponent(message.name)}&index=${index}`;
+	}
+
+	attachment(message, item, index) {
+		const url = this.media_url(message, index);
+		if (item.type === "img" && (!item.mime_type || IMAGE_TYPES.includes(item.mime_type))) {
+			const $image = $(`<img class="chat-image" loading="lazy">`).attr({ src: url, alt: item.file_name || "" });
+			return $(`<a class="chat-media" target="_blank" rel="noopener noreferrer"></a>`).attr("href", url).append($image);
+		}
+		if (item.type === "video" && VIDEO_TYPES.includes(item.mime_type)) {
+			const video = document.createElement("video");
+			video.className = "chat-video";
+			video.controls = true;
+			video.preload = "none";
+			video.src = url;
+			return $(`<div class="chat-media"></div>`).append(video);
+		}
+		const size = item.file_size ? ` (${this.file_size(item.file_size)})` : "";
+		return $(`<a class="chat-file" download></a>`)
+			.attr("href", url)
+			.text(`📎 ${item.file_name || __("File", null, CONTEXT)}${size}`);
+	}
+
+	file_size(bytes) {
+		const units = ["B", "KB", "MB", "GB"];
+		let unit = 0;
+		while (bytes >= 1024 && unit < units.length - 1) {
+			bytes /= 1024;
+			unit++;
+		}
+		return `${unit ? bytes.toFixed(1) : bytes} ${units[unit]}`;
 	}
 
 	voice_player(message) {

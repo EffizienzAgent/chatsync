@@ -8,6 +8,7 @@ from frappe.utils.pdf import get_pdf
 
 from chatsync.api import check_chat
 from chatsync.formatting import render
+from chatsync.messages import attachments_of
 
 DOCUMENT_TYPE = "correspondence"
 SOURCE_SYSTEM = "chatsync"
@@ -36,13 +37,31 @@ def messages_between(chat: str, start, end) -> list[dict]:
 	return frappe.get_all(
 		"Chat Message",
 		filters=filters,
-		fields=["sent_at", "direction", "sender_name", "kind", "text", "transcript", "media_url"],
+		fields=[
+			"sent_at",
+			"direction",
+			"sender_name",
+			"kind",
+			"text",
+			"transcript",
+			"media_url",
+			"attachments",
+		],
 		order_by="sent_at asc, name asc",
 	)
 
 
+def attachment_line(item: dict) -> str:
+	name = item.get("file_name")
+	if item.get("type") == "img":
+		return escape_html(_("[Image: {0}]").format(name) if name else _("[Image]"))
+	return "📎 " + escape_html(name or _("File"))
+
+
 def content_of(row: dict) -> str:
 	parts = [render(row.text)] if row.text else []
+	if row.kind != "Voice":
+		parts.extend(attachment_line(item) for item in attachments_of(row))
 	if row.transcript:
 		parts.append("🎤 " + escape_html(row.transcript))
 	if not parts and (row.media_url or row.kind not in ("Text", "Voice")):

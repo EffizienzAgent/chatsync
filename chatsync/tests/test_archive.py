@@ -114,3 +114,26 @@ class TestArchive(ChatsyncTestCase):
 		):
 			self.assertEqual(self.archive(), "BD-1")
 		self.assertEqual(base64.b64decode(upload.call_args.kwargs["content_base64"]), data)
+
+	def test_attachments_are_listed_not_embedded(self):
+		from docarchive.tests.factories import pdf
+
+		attachments = [
+			{"type": "img", "srcURL": "mxc://a", "fileName": "foto<1>.jpg", "mimeType": "image/jpeg"},
+			{"type": "unknown", "srcURL": "mxc://b", "fileName": "Angebot.pdf"},
+		]
+		name = upsert(
+			self.chat, message(self.raw["id"], 0, "Schau mal", type="IMAGE", attachments=attachments)
+		)
+		frappe.db.set_value("Chat Message", name, "sent_at", datetime(2026, 1, 4, 9, 0))
+		with patch("chatsync.archive.render_pdf", return_value=pdf(b"x")) as render:
+			self.archive("2026-01-04", "2026-01-04")
+		html = render.call_args.args[0]
+		self.assertIn("Schau mal<br>[Image: foto&lt;1&gt;.jpg]<br>📎 Angebot.pdf", html)
+		self.assertNotIn("<img", html)
+		self.assertNotIn("mxc://", html)
+		frappe.local.lang = "de"
+		self.addCleanup(setattr, frappe.local, "lang", "en")
+		from chatsync.archive import attachment_line
+
+		self.assertEqual(attachment_line({"type": "img", "file_name": "a.jpg"}), "[Bild: a.jpg]")

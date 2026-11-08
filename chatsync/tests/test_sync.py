@@ -6,6 +6,7 @@ from frappe.tests import IntegrationTestCase
 
 from chatsync import sync
 from chatsync.beeper import BeeperError
+from chatsync.messages import upsert
 from chatsync.tests.helpers import tag
 from chatsync.tests.test_matching import make_contact
 
@@ -176,3 +177,81 @@ class TestSync(IntegrationTestCase):
 		self.assertEqual([r.contact for r in rows], [contact])
 		self.assertTrue(rows[0].history_complete)
 		self.assertEqual(self.texts(rows[0].name), ["ancient", "new"])
+
+	def test_one_failing_chat_does_not_block_others(self):
+		bad, good = chat_json(self.number), chat_json(self.number)
+		fake = FakeBeeper(
+			[bad, good],
+			{bad["id"]: [[message(bad["id"], 1)]], good["id"]: [[message(good["id"], 1, "ok")]]},
+		)
+		fake.fail_on = (bad["id"], 0)
+		self.run_with(fake)
+		good_chat = frappe.db.get_value("Chat", {"beeper_chat_id": good["id"]})
+		self.assertEqual(self.texts(good_chat), ["ok"])
+		account = frappe.get_doc("Chat Account", self.account.name)
+		self.assertFalse(account.last_synced_at)
+		self.assertIn("1 chat(s) failed", account.last_error)
+
+	def test_empty_page_deletes_nothing(self):
+		chat = chat_json(self.number)
+		self.run_with(FakeBeeper([chat], {chat["id"]: [[message(chat["id"], 0.5, "keep")]]}))
+		name = self.chats()[0].name
+		self.run_with(FakeBeeper([chat], {chat["id"]: [[]]}))
+		self.assertEqual(self.texts(name), ["keep"])
+
+	def test_unchanged_message_is_not_rewritten(self):
+		chat = chat_json(self.number)
+		raw = message(chat["id"], 0.5, "same")
+		fake = FakeBeeper([chat], {chat["id"]: [[raw]]})
+		self.run_with(fake)
+		name = frappe.get_all("Chat Message", pluck="name", filters={"beeper_message_id": raw["id"]})[0]
+		frappe.db.set_value("Chat Message", name, "modified", "2000-01-01 00:00:00", update_modified=False)
+		self.run_with(fake)
+		self.assertEqual(str(frappe.db.get_value("Chat Message", name, "modified")), "2000-01-01 00:00:00")
+
+	def test_duplicate_insert_falls_back_to_update(self):
+		chat = chat_json(self.number)
+		raw = message(chat["id"], 0.5, "one")
+		self.run_with(FakeBeeper([chat], {chat["id"]: [[raw]]}))
+		name = self.chats()[0].name
+		real = frappe.db.get_value
+		calls = []
+
+		def first_lookup_misses(*args, **kwargs):
+			calls.append(args)
+			return None if len(calls) == 1 else real(*args, **kwargs)
+
+		with patch.object(frappe.db, "get_value", first_lookup_misses):
+			upsert(name, {**raw, "text": "two"})
+		self.assertEqual(self.texts(name), ["two"])
+
+	def test_failed_history_import_is_retried_by_next_sync(self):
+		chat = chat_json(self.number)
+		fake = FakeBeeper(
+			[chat],
+			{chat["id"]: [[message(chat["id"], 1, "new")], [message(chat["id"], 40, "ancient")]]},
+		)
+		fake.fail_on = (chat["id"], 1)
+		self.run_with(fake, sync.rematch_contact, self.contact)
+		self.assertTrue(self.chats()[0].history_requested)
+		self.assertFalse(self.chats()[0].history_complete)
+		fake.fail_on = None
+		self.run_with(fake)
+		row = self.chats()[0]
+		self.assertTrue(row.history_complete)
+		self.assertEqual(self.texts(row.name), ["ancient", "new"])
+
+	def test_contact_update_ignores_unrelated_changes(self):
+		with patch.object(sync, "enqueue") as enqueue:
+			doc = frappe.get_doc("Contact", self.contact)
+			doc.last_name = "Changed"
+			doc.save(ignore_permissions=True)
+			enqueue.assert_not_called()
+			doc.append("phone_nos", {"phone": f"+4917{int(tag()[:7], 16) % 10**8:08d}"})
+			doc.save(ignore_permissions=True)
+			enqueue.assert_called_once()
+
+	def test_new_contact_with_phone_enqueues_once(self):
+		with patch.object(sync, "enqueue") as enqueue:
+			make_contact(phones=[f"+4917{int(tag()[:7], 16) % 10**8:08d}"])
+			enqueue.assert_called_once()

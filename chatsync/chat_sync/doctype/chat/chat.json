@@ -16,6 +16,7 @@
   "counterpart_phone",
   "counterpart_username",
   "contact",
+  "history_requested",
   "history_complete",
   "last_message_at",
   "newest_sort_key"
@@ -74,6 +75,12 @@
    "fieldtype": "Link",
    "label": "Contact",
    "options": "Contact"
+  },
+  {
+   "fieldname": "history_requested",
+   "fieldtype": "Check",
+   "label": "History Requested",
+   "read_only": 1
   },
   {
    "fieldname": "history_complete",

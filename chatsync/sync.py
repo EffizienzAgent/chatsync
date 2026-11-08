@@ -3,8 +3,7 @@ from datetime import datetime, timedelta
 import frappe
 from frappe.utils import get_datetime, now_datetime
 
-from chatsync.beeper import BeeperClient, BeeperError
-from chatsync.extensions import contact_filter
+from chatsync.beeper import BeeperAuthError, BeeperClient, BeeperError
 from chatsync.matching import counterpart, match, phone_index
 from chatsync.messages import sort_order, to_site_time, upsert
 
@@ -22,6 +21,7 @@ def enqueue(method: str, job_id: str, **kwargs):
 		job_id=job_id,
 		deduplicate=True,
 		now=frappe.flags.in_test,
+		enqueue_after_commit=not frappe.flags.in_test,
 		**kwargs,
 	)
 
@@ -55,6 +55,7 @@ def sync_account(account: str) -> None:
 	try:
 		client = client_for(doc)
 		index = phone_index()
+		failed: list[str] = []
 		for raw in walk_chats(client, threshold):
 			cp = counterpart(raw)
 			if not cp:
@@ -62,11 +63,29 @@ def sync_account(account: str) -> None:
 			found = match(doc.user, cp, index=index)
 			if not found.contact:
 				continue
-			chat = ensure_chat(doc, raw, cp, found.contact)
-			sync_chat(client, chat, started, days)
+			try:
+				chat = ensure_chat(doc, raw, cp, found.contact)
+				sync_chat(client, chat, started, days)
+			except BeeperAuthError:
+				raise
+			except Exception as e:
+				failed.append(str(e))
+				frappe.log_error(title=f"Chat Sync failed for chat {cp.beeper_chat_id}: {e}")
+				continue
 			commit()
+		queue_incomplete_histories(account)
 	except BeeperError as e:
 		fail(account, e)
+		return
+	if failed:
+		frappe.db.set_value(
+			"Chat Account",
+			account,
+			"last_error",
+			f"{len(failed)} chat(s) failed, last: {failed[-1]}"[:140],
+			update_modified=False,
+		)
+		commit()
 		return
 	frappe.db.set_value(
 		"Chat Account",
@@ -75,6 +94,13 @@ def sync_account(account: str) -> None:
 		update_modified=False,
 	)
 	commit()
+
+
+def queue_incomplete_histories(account: str) -> None:
+	for chat in frappe.get_all(
+		"Chat", filters={"account": account, "history_requested": 1, "history_complete": 0}, pluck="name"
+	):
+		enqueue("chatsync.sync.import_history", f"chatsync-history-{chat}", chat=chat)
 
 
 def walk_chats(client: BeeperClient, threshold: datetime):
@@ -135,7 +161,8 @@ def sync_chat(client: BeeperClient, chat: str, started: datetime, initial_days: 
 				newest_seen = raw.get("sortKey")
 		if reached_known or not cursor or not items:
 			break
-	remove_vanished(chat, window_start, seen)
+	if seen:
+		remove_vanished(chat, window_start, seen)
 	update_cursor(chat, newest_seen)
 
 
@@ -194,6 +221,7 @@ def rematch_contact(contact: str) -> None:
 					continue
 				chat = ensure_chat(doc, raw, cp, contact)
 				if not frappe.db.get_value("Chat", chat, "history_complete"):
+					frappe.db.set_value("Chat", chat, "history_requested", 1, update_modified=False)
 					enqueue("chatsync.sync.import_history", f"chatsync-history-{chat}", chat=chat)
 		except BeeperError as e:
 			fail(account.name, e)
@@ -211,19 +239,20 @@ def all_chats(client: BeeperClient):
 def identity(doc) -> tuple:
 	phones = sorted(row.phone or "" for row in doc.get("phone_nos") or [])
 	identifiers = sorted(
-		(r.network, r.beeper_chat_id, r.identifier, bool(r.excluded))
+		(r.network or "", r.beeper_chat_id or "", r.identifier or "", bool(r.excluded))
 		for r in doc.get("chat_identifiers") or []
 	)
 	return phones, identifiers
 
 
 def on_contact_update(doc, method=None) -> None:
-	if not frappe.db.exists("Chat Account", {"enabled": 1}):
+	if frappe.flags.in_import or frappe.flags.in_carddav_pull:
+		return
+	phones, identifiers = identity(doc)
+	if not (phones or identifiers):
 		return
 	before = doc.get_doc_before_save()
-	changed = before is None or identity(before) != identity(doc)
-	if not changed:
-		unlinked = not frappe.db.exists("Chat", {"contact": doc.name})
-		changed = unlinked and bool(identity(doc)[0]) and contact_filter()(doc.name)
-	if changed:
+	if before is not None and identity(before) == (phones, identifiers):
+		return
+	if frappe.db.exists("Chat Account", {"enabled": 1}):
 		enqueue("chatsync.sync.rematch_contact", f"chatsync-rematch-{doc.name}", contact=doc.name)

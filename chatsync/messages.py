@@ -38,11 +38,17 @@ def upsert(chat: str, raw: dict) -> str | None:
 		"text": raw.get("text"),
 		"media_url": attachments[0].get("srcURL") if attachments else None,
 	}
-	if existing:
-		doc = frappe.get_doc("Chat Message", existing)
-		doc.update(values)
-		doc.save(ignore_permissions=True)
-		return doc.name
-	doc = frappe.get_doc({"doctype": "Chat Message", "chat": chat, "beeper_message_id": raw["id"], **values})
-	doc.insert(ignore_permissions=True)
-	return doc.name
+	if not existing:
+		try:
+			doc = frappe.get_doc(
+				{"doctype": "Chat Message", "chat": chat, "beeper_message_id": raw["id"], **values}
+			)
+			doc.insert(ignore_permissions=True)
+			return doc.name
+		except frappe.UniqueValidationError:
+			existing = frappe.db.get_value("Chat Message", {"chat": chat, "beeper_message_id": raw["id"]})
+	current = frappe.db.get_value("Chat Message", existing, list(values), as_dict=True)
+	changed = {k: v for k, v in values.items() if (current[k] or None) != (v or None)}
+	if changed:
+		frappe.db.set_value("Chat Message", existing, changed)
+	return existing

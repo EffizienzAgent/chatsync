@@ -138,7 +138,7 @@ class TestAssignment(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			api.assign_chat(chat["id"], contact)
 		frappe.set_user("Administrator")
-		self.assertEqual(frappe.db.get_value("Chat", name, ["user", "contact"]), [USER, contact])
+		self.assertEqual(frappe.db.get_value("Chat", name, ["user", "contact"]), (USER, contact))
 		self.assertEqual(frappe.db.count("Chat", {"beeper_chat_id": chat["id"]}), 1)
 
 	def test_assign_to_other_contact_replaces_rows(self):

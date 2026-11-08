@@ -1,3 +1,5 @@
+const CONTEXT = "Chat View";
+
 frappe.pages["chat-view"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({ parent: wrapper, title: __("Chat"), single_column: true });
 	wrapper.chat_view = new ChatView(page);
@@ -33,7 +35,8 @@ class ChatView {
 		this.chat = chat;
 		this.messages = [];
 		this.has_more = false;
-		this.loading = false;
+		this.loading = null;
+		this.clear_pending();
 		this.$list.empty();
 		this.page.clear_menu();
 		frappe
@@ -44,20 +47,20 @@ class ChatView {
 				this.has_more = data.has_more;
 				this.messages = data.messages;
 				this.page.set_title(data.chat.contact_name || data.chat.title || chat);
-				this.page.set_indicator(data.chat.network || "", "gray");
+				this.page.set_indicator(frappe.utils.escape_html(data.chat.network || ""), "gray");
 				this.add_actions(data);
 				this.render();
-				this.$input.attr("placeholder", __("Reply"));
+				this.$input.attr("placeholder", __("Reply", null, CONTEXT));
 				if (day) await this.reveal(day);
 				else this.scroll_to_bottom();
 			});
 	}
 
 	add_actions(data) {
-		this.page.add_menu_item(__("Reassign to another contact"), () => this.reassign());
-		this.page.add_menu_item(__("Unassign"), () => this.unassign());
+		this.page.add_menu_item(__("Reassign to another contact", null, CONTEXT), () => this.reassign());
+		this.page.add_menu_item(__("Unassign", null, CONTEXT), () => this.unassign());
 		if (data.archive_available) {
-			this.page.add_menu_item(__("Archive"), () =>
+			this.page.add_menu_item(__("Archive", null, CONTEXT), () =>
 				$(document).trigger("chatsync:archive", [this.chat])
 			);
 		}
@@ -65,15 +68,15 @@ class ChatView {
 
 	reassign() {
 		const dialog = new frappe.ui.Dialog({
-			title: __("Reassign to another contact"),
+			title: __("Reassign to another contact", null, CONTEXT),
 			fields: [{ fieldname: "contact", fieldtype: "Link", options: "Contact", label: __("Contact"), reqd: 1 }],
-			primary_action_label: __("Reassign"),
+			primary_action_label: __("Reassign", null, CONTEXT),
 			primary_action: ({ contact }) => {
 				frappe
 					.call({ method: "chatsync.api.reassign_chat", args: { chat: this.chat, contact } })
-					.then(() => {
+					.then((r) => {
 						dialog.hide();
-						this.open(this.chat);
+						frappe.set_route("chat-view", r.message);
 					});
 			},
 		});
@@ -95,7 +98,7 @@ class ChatView {
 	bubble(message) {
 		const out = message.direction === "Out";
 		const $bubble = $(`<div class="chat-bubble"></div>`);
-		if (message.kind !== "Text") $(`<div class="chat-kind"></div>`).text(__(message.kind)).appendTo($bubble);
+		if (message.kind !== "Text") $(`<div class="chat-kind"></div>`).text(__(message.kind, null, CONTEXT)).appendTo($bubble);
 		if (message.text) $(`<div class="chat-text"></div>`).text(message.text).appendTo($bubble);
 		if (message.transcript) $(`<div class="chat-transcript"></div>`).text(message.transcript).appendTo($bubble);
 		const sender = out ? "" : message.sender_name ? `${message.sender_name} · ` : "";
@@ -119,12 +122,17 @@ class ChatView {
 			}
 			this.bubble(message).appendTo(this.$list);
 		}
+		this.$pending?.appendTo(this.$list);
 		this.$more.text(this.has_more ? __("Loading older messages...") : "");
 	}
 
-	async load_older() {
-		if (this.loading || !this.has_more || !this.messages.length) return false;
-		this.loading = true;
+	load_older() {
+		if (!this.has_more || !this.messages.length) return Promise.resolve(false);
+		this.loading ||= this.fetch_older().finally(() => (this.loading = null));
+		return this.loading;
+	}
+
+	async fetch_older() {
 		const r = await frappe.call({
 			method: "chatsync.api.get_messages",
 			args: { chat: this.chat, before: this.messages[0].name },
@@ -134,13 +142,12 @@ class ChatView {
 		this.has_more = r.message.has_more;
 		this.render();
 		this.$scroll.scrollTop(this.$scroll[0].scrollHeight - height);
-		this.loading = false;
 		return true;
 	}
 
 	async reveal(day) {
 		while (this.messages.length && this.day_of(this.messages[0]) > day && this.has_more) {
-			await this.load_older();
+			if (!(await this.load_older())) break;
 		}
 		const target = this.$list.find(".chat-day").filter((_, el) => $(el).attr("data-day") >= day)[0];
 		if (!target) return this.scroll_to_bottom();
@@ -149,6 +156,47 @@ class ChatView {
 
 	scroll_to_bottom() {
 		this.$scroll.scrollTop(this.$scroll[0].scrollHeight);
+	}
+
+	merge(incoming) {
+		const known = new Set(this.messages.map((m) => m.name));
+		const added = incoming.filter((m) => !known.has(m.name));
+		this.messages = this.messages.concat(added).sort((a, b) => a.sent_at.localeCompare(b.sent_at));
+		this.render();
+		return added;
+	}
+
+	show_pending(text) {
+		this.clear_pending();
+		this.$pending = $(`<div class="chat-row out chat-pending"></div>`).append(
+			$(`<div class="chat-bubble"></div>`)
+				.append($(`<div class="chat-text"></div>`).text(text))
+				.append($(`<div class="chat-meta"></div>`).text(__("Sending...", null, CONTEXT)))
+		);
+		this.$pending.appendTo(this.$list);
+		this.scroll_to_bottom();
+	}
+
+	clear_pending() {
+		this.$pending?.remove();
+		this.$pending = null;
+		clearTimeout(this.poll_timer);
+	}
+
+	poll_sent(text, tries = 4) {
+		this.poll_timer = setTimeout(async () => {
+			if (!this.$pending) return;
+			const r = await frappe.call({ method: "chatsync.api.refresh_messages", args: { chat: this.chat } });
+			const added = this.merge(r.message.messages);
+			if (added.some((m) => m.direction === "Out" && m.text === text)) {
+				this.clear_pending();
+				this.scroll_to_bottom();
+			} else if (tries > 1) {
+				this.poll_sent(text, tries - 1);
+			} else {
+				this.clear_pending();
+			}
+		}, 2500);
 	}
 
 	send() {
@@ -160,11 +208,13 @@ class ChatView {
 			.call({ method: "chatsync.api.send_message", args: { chat: this.chat, text } })
 			.then((r) => {
 				this.$input.val("");
-				const known = new Set(this.messages.map((m) => m.name));
-				const added = r.message.messages.filter((m) => !known.has(m.name));
-				this.messages = this.messages.concat(added).sort((a, b) => a.sent_at.localeCompare(b.sent_at));
-				this.render();
-				this.scroll_to_bottom();
+				const added = this.merge(r.message.messages);
+				if (added.some((m) => m.direction === "Out" && m.text === text)) {
+					this.scroll_to_bottom();
+				} else {
+					this.show_pending(text);
+					this.poll_sent(text);
+				}
 			})
 			.always(() => {
 				this.sending = false;

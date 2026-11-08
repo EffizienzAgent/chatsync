@@ -54,10 +54,13 @@ class TestChatView(IntegrationTestCase):
 		self.chat = api.assign_chat(self.raw["id"], make_contact(phones=[number]))
 		frappe.db.delete("Chat Message", {"chat": self.chat})
 
-	def request(self, **kwargs):
+	def request(self, cmd="chatsync.api.send_message", **kwargs):
 		patcher = patch.object(frappe.local, "request", fake_request(**kwargs), create=True)
 		patcher.start()
 		self.addCleanup(patcher.stop)
+		form = patch.dict(frappe.local.form_dict, {"cmd": cmd})
+		form.start()
+		self.addCleanup(form.stop)
 
 	def fill(self, count):
 		for i in range(count):
@@ -95,6 +98,24 @@ class TestChatView(IntegrationTestCase):
 			api.send_message(self.chat, "hello")
 		self.assertEqual(self.fake.sent, [])
 
+	def test_send_rejects_bearer_auth(self):
+		self.request(authorization="Bearer abc123")
+		with self.assertRaises(frappe.PermissionError):
+			api.send_message(self.chat, "hello")
+		self.assertEqual(self.fake.sent, [])
+
+	def test_send_rejects_in_process_call_during_other_request(self):
+		self.request(cmd="chatsync.api.search_chats")
+		with self.assertRaises(frappe.PermissionError):
+			api.send_message(self.chat, "hello")
+		self.assertEqual(self.fake.sent, [])
+
+	def test_refresh_stores_confirmed_message(self):
+		self.fake.latest = [message(self.raw["id"], 0, "late", isSender=True)]
+		result = api.refresh_messages(self.chat)
+		self.assertEqual([m["text"] for m in result["messages"]], ["late"])
+		self.assertEqual(self.fake.sent, [])
+
 	def test_send_rejects_without_request(self):
 		with patch.object(frappe.local, "request", None, create=True):
 			with self.assertRaises(frappe.PermissionError):
@@ -123,3 +144,10 @@ class TestChatView(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			api.send_message(self.chat, "   ")
 		self.assertEqual(self.fake.sent, [])
+
+	def test_reassign_returns_new_chat_name(self):
+		other = make_contact()
+		new = api.reassign_chat(self.chat, other)
+		self.assertNotEqual(new, self.chat)
+		self.assertEqual(frappe.db.get_value("Chat", new, "contact"), other)
+		self.assertFalse(frappe.db.exists("Chat", self.chat))

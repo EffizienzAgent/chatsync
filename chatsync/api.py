@@ -167,14 +167,15 @@ def unassign_chat(chat: str) -> None:
 
 
 @frappe.whitelist()
-def reassign_chat(chat: str, contact: str) -> None:
+def reassign_chat(chat: str, contact: str) -> str:
 	check_chat(chat)
 	check_contact(contact)
 	beeper_chat_id = frappe.db.get_value("Chat", chat, "beeper_chat_id")
 	unassign_chat(chat)
-	assign_chat(beeper_chat_id, contact)
+	return assign_chat(beeper_chat_id, contact)
 
 
+SEND_COMMAND = "chatsync.api.send_message"
 MESSAGE_FIELDS = ["name", "sent_at", "direction", "sender_name", "kind", "text", "transcript", "media_url"]
 
 
@@ -231,7 +232,12 @@ def contact_name(contact: str | None) -> str | None:
 
 def check_browser_session() -> None:
 	request = getattr(frappe.local, "request", None)
-	if request is None or request.method != "POST" or frappe.get_request_header("Authorization"):
+	if (
+		request is None
+		or request.method != "POST"
+		or frappe.get_request_header("Authorization")
+		or frappe.form_dict.get("cmd") != SEND_COMMAND
+	):
 		frappe.throw(frappe._("Sending is only possible from the chat view."), frappe.PermissionError)
 
 
@@ -250,9 +256,17 @@ def send_message(chat: str, text: str) -> dict:
 	text = (text or "").strip()
 	if not text:
 		frappe.throw(frappe._("The message is empty."))
-	beeper_chat_id, account = frappe.db.get_value("Chat", chat, ["beeper_chat_id", "account"])
-	client = sync.client_for(frappe.get_doc("Chat Account", account))
+	client, beeper_chat_id = chat_client(chat)
 	beeper_call(client.send_text, beeper_chat_id, text)
+	return {"messages": pull_latest(chat, client, beeper_chat_id)}
+
+
+def chat_client(chat: str):
+	beeper_chat_id, account = frappe.db.get_value("Chat", chat, ["beeper_chat_id", "account"])
+	return sync.client_for(frappe.get_doc("Chat Account", account)), beeper_chat_id
+
+
+def pull_latest(chat: str, client, beeper_chat_id: str) -> list[dict]:
 	items, _cursor = beeper_call(client.messages, beeper_chat_id)
 	names = []
 	for raw in items:
@@ -265,4 +279,12 @@ def send_message(chat: str, text: str) -> dict:
 	rows = frappe.get_all(
 		"Chat Message", filters={"name": ["in", names]}, fields=MESSAGE_FIELDS, order_by="sent_at"
 	)
-	return {"messages": [serialize(r) for r in rows]}
+	return [serialize(r) for r in rows]
+
+
+@frappe.whitelist()
+def refresh_messages(chat: str) -> dict:
+	"""Read-only: fetch the newest page from Beeper and store it (used after a send to catch the confirmation)."""
+	check_chat(chat)
+	client, beeper_chat_id = chat_client(chat)
+	return {"messages": pull_latest(chat, client, beeper_chat_id)}

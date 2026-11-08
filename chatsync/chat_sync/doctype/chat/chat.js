@@ -2,7 +2,8 @@ frappe.ui.form.on("Chat", {
 	refresh(frm) {
 		if (frm.is_new()) return;
 		const day = new URLSearchParams(window.location.search).get("day");
-		frappe.route_options = day ? { day } : null;
-		frappe.set_route("chat-view", frm.doc.name);
+		const query = day ? `?day=${encodeURIComponent(day)}` : "";
+		history.replaceState(null, "", `/app/chat-view/${encodeURIComponent(frm.doc.name)}${query}`);
+		frappe.router.route();
 	},
 });

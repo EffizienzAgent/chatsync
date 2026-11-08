@@ -3,6 +3,7 @@ from unittest.mock import patch
 import frappe
 
 from chatsync import api, sync
+from chatsync.beeper import BeeperError
 from chatsync.tests.helpers import ChatsyncTestCase, tag
 from chatsync.tests.test_matching import make_contact
 from chatsync.tests.test_permissions import make_user
@@ -120,6 +121,30 @@ class TestAssignment(ChatsyncTestCase):
 		self.assertTrue(result[ambiguous["id"]]["ambiguous"])
 		self.assertFalse(result[free["id"]]["ambiguous"])
 		self.assertEqual(frappe.db.count("Chat"), before)
+
+	def test_unassigned_chats_use_short_timeout_and_raise_beeper_errors(self):
+		created = []
+
+		class Down(AssignmentBeeper):
+			def chats(self, cursor=None):
+				raise BeeperError(0, "ConnectionError")
+
+		def client(*args, **kwargs):
+			created.append(kwargs.get("timeout"))
+			return Down([], {})
+
+		frappe.local.message_log = []
+		with patch.object(sync, "BeeperClient", client):
+			with self.assertRaises(BeeperError):
+				api.find_unassigned_chats(USER)
+			self.assertEqual(frappe.message_log, [])
+			with self.assertRaises(frappe.ValidationError):
+				api.unassigned_chats()
+		self.assertEqual(created, [api.UNASSIGNED_TIMEOUT] * 2)
+
+	def test_unassigned_chats_without_account_is_empty(self):
+		frappe.db.set_value("Chat Account", self.account.name, "enabled", 0)
+		self.assertEqual(api.find_unassigned_chats(USER), [])
 
 	def test_search_chats_returns_direct_chats(self):
 		chat = chat_json(self.number)

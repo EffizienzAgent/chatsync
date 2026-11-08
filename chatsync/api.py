@@ -8,6 +8,8 @@ from chatsync import messages, sync
 from chatsync.beeper import BeeperError
 from chatsync.matching import counterpart, match, phone_index
 
+UNASSIGNED_TIMEOUT = 5
+
 
 @contextmanager
 def assignment_writes():
@@ -99,25 +101,31 @@ def search_chats(query: str) -> list[dict]:
 	return result
 
 
-@frappe.whitelist()
-def unassigned_chats(days: int = 14) -> list[dict]:
-	account = session_account()
-	client = sync.client_for(account)
+def find_unassigned_chats(user: str | None = None, days: int = 14) -> list[dict]:
+	"""Direct chats active in the last `days` that no contact takes. Raises BeeperError."""
+	name = frappe.db.get_value("Chat Account", {"user": user or frappe.session.user, "enabled": 1})
+	if not name:
+		return []
+	account = frappe.get_doc("Chat Account", name)
+	client = sync.client_for(account, timeout=UNASSIGNED_TIMEOUT)
 	threshold = now_datetime() - timedelta(days=int(days))
 	index = phone_index()
 	result = []
-	try:
-		for raw in sync.walk_chats(client, threshold):
-			cp = counterpart(raw)
-			if not cp:
-				continue
-			found = match(account.user, cp, index=index)
-			if found.contact or found.excluded:
-				continue
-			result.append({**summary(raw, cp), "ambiguous": found.ambiguous})
-	except BeeperError as e:
-		frappe.throw(str(e))
+	for raw in sync.walk_chats(client, threshold):
+		cp = counterpart(raw)
+		if not cp:
+			continue
+		found = match(account.user, cp, index=index)
+		if found.contact or found.excluded:
+			continue
+		result.append({**summary(raw, cp), "ambiguous": found.ambiguous})
 	return result
+
+
+@frappe.whitelist()
+def unassigned_chats(days: int = 14) -> list[dict]:
+	session_account()
+	return beeper_call(find_unassigned_chats, None, days)
 
 
 @frappe.whitelist()

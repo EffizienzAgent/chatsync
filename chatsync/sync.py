@@ -10,8 +10,9 @@ from chatsync.messages import sort_order, to_site_time, upsert
 EDIT_WINDOW_DAYS = 2
 
 
-def client_for(account) -> BeeperClient:
-	return BeeperClient(account.base_url, account.get_password("access_token"))
+def client_for(account, timeout: int | None = None) -> BeeperClient:
+	options = {"timeout": timeout} if timeout else {}
+	return BeeperClient(account.base_url, account.get_password("access_token"), **options)
 
 
 def enqueue(method: str, job_id: str, **kwargs):

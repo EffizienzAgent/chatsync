@@ -3,7 +3,7 @@ frappe.ui.form.on("Chat", {
 		if (frm.is_new()) return;
 		const day = new URLSearchParams(window.location.search).get("day");
 		const query = day ? `?day=${encodeURIComponent(day)}` : "";
-		history.replaceState(null, "", `/app/chat-view/${encodeURIComponent(frm.doc.name)}${query}`);
+		history.replaceState(null, "", `/desk/chat-view/${encodeURIComponent(frm.doc.name)}${query}`);
 		frappe.router.route();
 	},
 });

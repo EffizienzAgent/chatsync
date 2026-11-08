@@ -1,0 +1,147 @@
+from unittest.mock import patch
+
+import frappe
+from frappe.tests import IntegrationTestCase
+
+from chatsync import api, sync
+from chatsync.tests.helpers import tag
+from chatsync.tests.test_matching import make_contact
+from chatsync.tests.test_permissions import make_user
+from chatsync.tests.test_sync import USER, FakeBeeper, chat_json, message
+
+LOOKUP = "Chat Identifier"
+
+
+class AssignmentBeeper(FakeBeeper):
+	def chat(self, chat_id):
+		return next(c for c in self.chat_items if c["id"] == chat_id)
+
+	def search_chats(self, query, limit=20):
+		return [c for c in self.chat_items if query.lower() in c["title"].lower()]
+
+
+class TestAssignment(IntegrationTestCase):
+	def setUp(self):
+		self.addCleanup(frappe.db.rollback)
+		self.addCleanup(frappe.set_user, "Administrator")
+		frappe.db.delete("Chat Account", {"user": USER})
+		self.account = frappe.get_doc(
+			{"doctype": "Chat Account", "user": USER, "base_url": "http://beeper.test", "access_token": "x"}
+		).insert(ignore_permissions=True)
+		self.number = f"+4915{int(tag()[:7], 16) % 10**8:08d}"
+
+	def use(self, *chats, history=None):
+		fake = AssignmentBeeper(list(chats), history or {})
+		patcher = patch.object(sync, "BeeperClient", lambda *a, **k: fake)
+		patcher.start()
+		self.addCleanup(patcher.stop)
+		return fake
+
+	def test_assign_imports_history_and_keeps_phones(self):
+		chat = chat_json(self.number)
+		self.use(chat, history={chat["id"]: [[message(chat["id"], 1, "old news")]]})
+		contact = make_contact(phones=["+49 30 1234567"])
+		phones = [p.phone for p in frappe.get_doc("Contact", contact).phone_nos]
+		name = api.assign_chat(chat["id"], contact)
+		doc = frappe.get_doc("Chat", name)
+		self.assertEqual(
+			(doc.contact, doc.user, doc.history_requested, doc.history_complete), (contact, USER, 1, 1)
+		)
+		self.assertEqual(frappe.get_all("Chat Message", filters={"chat": name}, pluck="text"), ["old news"])
+		contact_doc = frappe.get_doc("Contact", contact)
+		self.assertEqual([p.phone for p in contact_doc.phone_nos], phones)
+		self.assertEqual([r.beeper_chat_id for r in contact_doc.chat_identifiers], [chat["id"]])
+		self.assertFalse(contact_doc.chat_identifiers[0].excluded)
+
+	def test_unassign_deletes_and_excludes(self):
+		chat = chat_json(self.number)
+		fake = self.use(chat, history={chat["id"]: [[message(chat["id"], 1)]]})
+		contact = make_contact(phones=[self.number])
+		name = api.assign_chat(chat["id"], contact)
+		api.unassign_chat(name)
+		fake.calls.clear()
+		self.assertFalse(frappe.db.exists("Chat", name))
+		self.assertFalse(frappe.db.exists("Chat Message", {"chat": name}))
+		rows = frappe.get_doc("Contact", contact).chat_identifiers
+		self.assertEqual([(r.beeper_chat_id, bool(r.excluded)) for r in rows], [(chat["id"], True)])
+		sync.sync_account(self.account.name)
+		self.assertEqual(frappe.get_all("Chat", filters={"account": self.account.name}), [])
+		self.assertEqual(fake.calls, [])
+
+	def test_reassign_moves_chat(self):
+		chat = chat_json(self.number)
+		self.use(chat, history={chat["id"]: [[message(chat["id"], 1)]]})
+		first, second = make_contact(), make_contact()
+		api.assign_chat(chat["id"], first)
+		api.reassign_chat(frappe.db.get_value("Chat", {"beeper_chat_id": chat["id"]}), second)
+		self.assertEqual(frappe.db.get_value("Chat", {"beeper_chat_id": chat["id"]}, "contact"), second)
+		self.assertEqual(frappe.get_doc("Contact", first).chat_identifiers, [])
+		self.assertFalse(frappe.get_doc("Contact", second).chat_identifiers[0].excluded)
+		sync.sync_account(self.account.name)
+		self.assertEqual(frappe.db.get_value("Chat", {"beeper_chat_id": chat["id"]}, "contact"), second)
+
+	def test_unassigned_lists_only_unmatched_direct_chats(self):
+		matched = chat_json(self.number)
+		make_contact(phones=[self.number])
+		free = chat_json(f"+4916{int(tag()[:7], 16) % 10**8:08d}")
+		old = chat_json(f"+4917{int(tag()[:7], 16) % 10**8:08d}", last_days=30)
+		group = chat_json(kind="group", others=2)
+		shared = f"+4918{int(tag()[:7], 16) % 10**8:08d}"
+		make_contact(phones=[shared])
+		make_contact(phones=[shared])
+		ambiguous = chat_json(shared)
+		excluded = chat_json(f"+4919{int(tag()[:7], 16) % 10**8:08d}")
+		make_contact(identifiers=[{"network": "whatsapp", "beeper_chat_id": excluded["id"], "excluded": 1}])
+		self.use(matched, free, group, ambiguous, excluded, old)
+		before = frappe.db.count("Chat")
+		result = {r["beeper_chat_id"]: r for r in api.unassigned_chats(days=14)}
+		self.assertEqual(set(result), {free["id"], ambiguous["id"]})
+		self.assertTrue(result[ambiguous["id"]]["ambiguous"])
+		self.assertFalse(result[free["id"]]["ambiguous"])
+		self.assertEqual(frappe.db.count("Chat"), before)
+
+	def test_search_chats_returns_direct_chats(self):
+		chat = chat_json(self.number)
+		self.use(chat, chat_json(kind="group", others=2))
+		result = api.search_chats("other")
+		self.assertEqual([r["beeper_chat_id"] for r in result], [chat["id"]])
+		self.assertEqual(result[0]["phone"], self.number)
+
+	def test_create_contact_for_chat_prefills_phone(self):
+		chat = {**chat_json(self.number), "title": "Erika Muster Mann"}
+		self.use(chat, history={chat["id"]: [[message(chat["id"], 1)]]})
+		name = api.create_contact_for_chat(chat["id"])
+		contact = frappe.get_doc("Contact", name)
+		self.assertEqual((contact.first_name, contact.last_name), ("Erika", "Muster Mann"))
+		self.assertEqual([p.phone for p in contact.phone_nos], [self.number])
+		self.assertEqual(frappe.db.get_value("Chat", {"beeper_chat_id": chat["id"]}, "contact"), name)
+
+	def test_assign_other_users_chat_forbidden(self):
+		chat = chat_json(self.number)
+		self.use(chat)
+		contact = make_contact()
+		name = api.assign_chat(chat["id"], contact)
+		other = make_user("b", ["Chat User"])
+		self.addCleanup(frappe.delete_doc, "User", other, force=True, ignore_permissions=True)
+		frappe.set_user(other)
+		with self.assertRaises(frappe.PermissionError):
+			api.unassign_chat(name)
+		with self.assertRaises(frappe.PermissionError):
+			api.reassign_chat(name, contact)
+		with self.assertRaises(frappe.ValidationError):
+			api.assign_chat(chat["id"], contact)
+		frappe.set_user("Administrator")
+		self.assertTrue(frappe.db.exists("Chat", name))
+
+	def test_unreadable_contact_refused(self):
+		chat = chat_json(self.number)
+		self.use(chat)
+		contact = make_contact()
+		other = make_user("c", ["Chat User"])
+		self.addCleanup(frappe.delete_doc, "User", other, force=True, ignore_permissions=True)
+		frappe.get_doc(
+			{"doctype": "Chat Account", "user": other, "base_url": "http://beeper.test", "access_token": "x"}
+		).insert(ignore_permissions=True)
+		frappe.set_user(other)
+		with self.assertRaises(frappe.PermissionError):
+			api.assign_chat(chat["id"], contact)

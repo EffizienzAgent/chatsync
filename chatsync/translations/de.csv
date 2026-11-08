@@ -3,3 +3,9 @@ Chat Account,Chat-Konto
 Chat Message,Chat-Nachricht
 Chat Sync Settings,Chat-Sync-Einstellungen
 Chat User,Chat-Benutzer
+Assign chat,Chat zuordnen
+No chats found,Keine Chats gefunden
+Only direct chats can be assigned,Nur Einzelchats können zugeordnet werden
+No enabled Chat Account for {0},Kein aktives Chat-Konto für {0}
+No permission for Contact {0},Keine Berechtigung für Kontakt {0}
+No permission for Chat {0},Keine Berechtigung für Chat {0}

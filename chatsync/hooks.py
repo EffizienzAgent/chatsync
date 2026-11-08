@@ -26,3 +26,5 @@ has_permission = {
 scheduler_events = {"cron": {"*/2 * * * *": ["chatsync.sync.sync_all"]}}
 
 doc_events = {"Contact": {"on_update": "chatsync.sync.on_contact_update"}}
+
+doctype_js = {"Contact": "public/js/contact.js"}

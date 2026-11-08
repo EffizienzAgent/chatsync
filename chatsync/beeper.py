@@ -27,6 +27,9 @@ class BeeperClient:
 	def chats(self, cursor: str | None = None) -> tuple[list[dict], str | None]:
 		return self._page("/v1/chats", {"direction": "before", **_cursor(cursor)}, "before")
 
+	def chat(self, chat_id: str) -> dict:
+		return self._get(f"/v1/chats/{quote(chat_id, safe='')}").json()
+
 	def search_chats(self, query: str, limit: int = 20) -> list[dict]:
 		params = {"query": query, "type": "single", "limit": limit}
 		return self._get("/v1/chats/search", params).json()["items"]

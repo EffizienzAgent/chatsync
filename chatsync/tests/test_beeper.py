@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 import requests
-from frappe.tests import UnitTestCase
+from frappe.tests import IntegrationTestCase
 
 from chatsync.beeper import BeeperAuthError, BeeperClient, BeeperError
 
@@ -26,7 +26,7 @@ class FakeResponse:
 		return self.payload
 
 
-class TestBeeperClient(UnitTestCase):
+class TestBeeperClient(IntegrationTestCase):
 	def setUp(self):
 		self.client = BeeperClient(BASE, TOKEN)
 
@@ -86,6 +86,24 @@ class TestBeeperClient(UnitTestCase):
 				self.client.setup_state()
 		self.assertNotIsInstance(ctx.exception, BeeperAuthError)
 		self.assertEqual(ctx.exception.status, 500)
+
+	def test_network_failure_raises_beeper_error(self):
+		failure = requests.ConnectionError(f"refused for Bearer {TOKEN}")
+		with patch.object(requests.Session, "request", side_effect=failure):
+			with self.assertRaises(BeeperError) as ctx:
+				self.client.chats()
+		self.assertEqual(ctx.exception.status, 0)
+		self.assertNotIn(TOKEN, str(ctx.exception))
+
+	def test_non_json_error_body(self):
+		class Html(FakeResponse):
+			def json(self):
+				raise ValueError("no json")
+
+		with self.serve(Html(status_code=502)):
+			with self.assertRaises(BeeperError) as ctx:
+				self.client.chats()
+		self.assertEqual(ctx.exception.status, 502)
 
 	def test_setup_state(self):
 		with self.serve(FakeResponse({"state": "ready"})):

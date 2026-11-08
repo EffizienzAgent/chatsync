@@ -60,9 +60,12 @@ class BeeperClient:
 		return self._request("GET", path, params=params)
 
 	def _request(self, method: str, path: str, **kwargs):
-		response = self.session.request(
-			method, self.base_url + path, headers=self.headers, timeout=self.timeout, **kwargs
-		)
+		try:
+			response = self.session.request(
+				method, self.base_url + path, headers=self.headers, timeout=self.timeout, **kwargs
+			)
+		except requests.RequestException as e:
+			raise BeeperError(0, type(e).__name__) from None
 		if response.ok:
 			return response
 		error = BeeperAuthError if response.status_code == 401 else BeeperError

@@ -81,9 +81,13 @@ def phone_index() -> dict[str, list[str]]:
 	return index
 
 
+def phone_contacts(user: str, phone: str, index: dict[str, list[str]]) -> list[str]:
+	return readable(user, index.get(phone, []))
+
+
 def by_phone(user: str, phone: str, index: dict[str, list[str]]) -> Match | None:
 	qualifies = contact_filter()
-	contacts = [c for c in readable(user, index.get(phone, [])) if qualifies(c)]
+	contacts = [c for c in phone_contacts(user, phone, index) if qualifies(c)]
 	if not contacts:
 		return None
 	return Match(contacts[0], False, False) if len(contacts) == 1 else Match(None, True, False)

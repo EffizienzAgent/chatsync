@@ -13,7 +13,8 @@
   "enabled",
   "initial_sync_done",
   "last_synced_at",
-  "last_error"
+  "last_error",
+  "ignored_chats"
  ],
  "fields": [
   {
@@ -58,6 +59,14 @@
    "fieldtype": "Small Text",
    "label": "Last Error",
    "read_only": 1
+  },
+  {
+   "fieldname": "ignored_chats",
+   "fieldtype": "Long Text",
+   "label": "Ignored Chats",
+   "hidden": 1,
+   "read_only": 1,
+   "description": "Beeper chat IDs the user chose to ignore among unassigned chats"
   }
  ],
  "autoname": "field:user",

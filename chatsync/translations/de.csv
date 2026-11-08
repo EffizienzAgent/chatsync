@@ -44,3 +44,5 @@ From,Von,Chat View
 To,Bis,Chat View
 Leave empty to archive the whole chat,Leer lassen für den gesamten Chat,Chat View
 Archived,Archiviert,Chat View
+Ignored Chats,Ignorierte Chats
+Beeper chat IDs the user chose to ignore among unassigned chats,"Beeper-Chat-IDs, die der Benutzer bei den nicht zugeordneten Chats ignoriert"

@@ -59,6 +59,11 @@ The scheduler syncs every two minutes. Token and transcription keys are stored a
   contact from an unassigned chat.
 - Unassigning a chat removes its messages and marks the chat as excluded for that contact, so it is
   not matched again.
+- Unassigned direct chats (`chatsync.api.unassigned_chats`) can be ignored by their owner
+  (`chatsync.api.ignore_chat`), for example private chats. Only the chat ID is kept, on the user's
+  Chat Account; an ignored chat no longer shows up there. When the chat's number belongs to exactly
+  one readable contact that phone matching skips (see the contact filter), the entry names it as
+  `existing_contact`, so it can be assigned instead of creating a duplicate.
 - Apps can restrict which contacts qualify for phone matching, see
   [docs/extending.md](docs/extending.md).
 

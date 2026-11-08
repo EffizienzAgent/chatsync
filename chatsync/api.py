@@ -1,3 +1,4 @@
+import json
 from contextlib import contextmanager
 from datetime import timedelta
 
@@ -6,7 +7,7 @@ from frappe.utils import now_datetime
 
 from chatsync import messages, sync
 from chatsync.beeper import BeeperError
-from chatsync.matching import counterpart, match_chat, phone_index
+from chatsync.matching import counterpart, match_chat, phone_contacts, phone_index
 
 UNASSIGNED_TIMEOUT = 5
 
@@ -110,16 +111,39 @@ def find_unassigned_chats(user: str | None = None, days: int = 14) -> list[dict]
 	client = sync.client_for(account, timeout=UNASSIGNED_TIMEOUT)
 	threshold = now_datetime() - timedelta(days=int(days))
 	index = phone_index()
+	ignored = ignored_chats(account.user)
 	result = []
 	for raw in sync.walk_chats(client, threshold):
 		cp = counterpart(raw)
-		if not cp:
+		if not cp or cp.beeper_chat_id in ignored:
 			continue
 		found = match_chat(account, cp, index=index)
 		if found.contact or found.excluded:
 			continue
-		result.append({**summary(raw, cp), "ambiguous": found.ambiguous})
+		existing = phone_contacts(account.user, cp.phone, index) if cp.phone else []
+		result.append(
+			{
+				**summary(raw, cp),
+				"ambiguous": found.ambiguous,
+				"existing_contact": existing[0] if len(existing) == 1 else None,
+			}
+		)
 	return result
+
+
+def ignored_chats(user: str | None = None) -> set[str]:
+	value = frappe.db.get_value("Chat Account", {"user": user or frappe.session.user}, "ignored_chats")
+	return set(json.loads(value or "[]"))
+
+
+@frappe.whitelist(methods=["POST"])
+def ignore_chat(beeper_chat_id: str) -> None:
+	"""Hides a chat from the caller's unassigned chats; nothing about it is stored but its ID."""
+	account = session_account()
+	ignored = sorted(ignored_chats(account.user) | {beeper_chat_id})
+	frappe.db.set_value(
+		"Chat Account", account.name, "ignored_chats", json.dumps(ignored), update_modified=False
+	)
 
 
 @frappe.whitelist()

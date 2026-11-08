@@ -4,7 +4,7 @@ import frappe
 
 from chatsync import api, sync
 from chatsync.beeper import BeeperError
-from chatsync.tests.helpers import ChatsyncTestCase, tag
+from chatsync.tests.helpers import ChatsyncTestCase, tag, use_hooks
 from chatsync.tests.test_matching import make_contact
 from chatsync.tests.test_permissions import make_user
 from chatsync.tests.test_sync import USER, FakeBeeper, chat_json, message
@@ -145,6 +145,34 @@ class TestAssignment(ChatsyncTestCase):
 	def test_unassigned_chats_without_account_is_empty(self):
 		frappe.db.set_value("Chat Account", self.account.name, "enabled", 0)
 		self.assertEqual(api.find_unassigned_chats(USER), [])
+
+	def test_ignored_chat_leaves_unassigned_list(self):
+		kept, ignored = chat_json(self.number), chat_json(f"+4916{int(tag()[:7], 16) % 10**8:08d}")
+		self.use(kept, ignored)
+		api.ignore_chat(ignored["id"])
+		api.ignore_chat(ignored["id"])
+		self.assertEqual([r["beeper_chat_id"] for r in api.find_unassigned_chats(USER)], [kept["id"]])
+		self.assertEqual(api.ignored_chats(USER), {ignored["id"]})
+
+	def test_ignore_is_per_user(self):
+		chat = chat_json(self.number)
+		self.use(chat)
+		other = self.other_user_with_account()
+		frappe.set_user(other)
+		api.ignore_chat(chat["id"])
+		frappe.set_user("Administrator")
+		self.assertEqual([r["beeper_chat_id"] for r in api.find_unassigned_chats(USER)], [chat["id"]])
+
+	def test_unassigned_chat_names_existing_private_contact(self):
+		use_hooks(self, chatsync_contact_filter=["chatsync.tests.test_sync.qualifies_none"])
+		chat = chat_json(self.number)
+		self.use(chat)
+		private = make_contact(phones=[self.number])
+		(item,) = api.find_unassigned_chats(USER)
+		self.assertEqual((item["existing_contact"], item["ambiguous"]), (private, False))
+		make_contact(phones=[self.number])
+		(item,) = api.find_unassigned_chats(USER)
+		self.assertIsNone(item["existing_contact"])
 
 	def test_search_chats_returns_direct_chats(self):
 		chat = chat_json(self.number)

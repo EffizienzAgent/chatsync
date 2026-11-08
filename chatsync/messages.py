@@ -94,6 +94,20 @@ def preview(raw: dict) -> dict:
 	}
 
 
+def summary_text(row) -> str:
+	"""One line for lists: plain text, with a marker for media."""
+	text = " ".join(formatting.plain(row.get("text")).split())
+	if row.get("kind") == "Voice":
+		return f"🎤 {row.get('transcript') or frappe._('Voice message')}"
+	if row.get("kind") == "Image":
+		return f"📷 {text or frappe._('Image')}"
+	if row.get("kind") == "File":
+		return f"📎 {text or frappe._('File')}"
+	if row.get("kind") == "Other":
+		return text or frappe._("Unsupported message type")
+	return text
+
+
 def upsert(chat: str, raw: dict) -> str | None:
 	if raw.get("type") in SKIPPED_TYPES or raw.get("isHidden"):
 		return None

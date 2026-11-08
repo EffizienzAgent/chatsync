@@ -515,3 +515,54 @@ def preview_chat(beeper_chat_id: str, limit: int = 20) -> dict:
 		"network_label": networks.label(cp.network),
 		"messages": [messages.preview(m) for m in shown[-limit:]],
 	}
+
+
+@frappe.whitelist(methods=["GET"])
+def get_conversations() -> list[dict]:
+	"""The user's conversations, newest first: one per contact (all its chats), else one per chat."""
+	chats = frappe.get_list(
+		"Chat",
+		filters={"user": frappe.session.user},
+		fields=["name", "network", "title", "contact", "last_message_at"],
+		limit_page_length=0,
+	)
+	groups: dict[str, list] = {}
+	for chat in chats:
+		groups.setdefault(chat.contact or chat.name, []).append(chat)
+	names = contact_names([c.contact for c in chats if c.contact])
+	table = frappe.qb.DocType("Chat Message")
+	rows = []
+	for key, members in groups.items():
+		last = (
+			frappe.qb.from_(table)
+			.select(table.sent_at, table.direction, table.kind, table.text, table.transcript)
+			.where(table.chat.isin([c.name for c in members]))
+			.orderby(table.sent_at, order=frappe.qb.desc)
+			.limit(1)
+			.run(as_dict=True)
+		)
+		last = last[0] if last else {}
+		contact = members[0].contact
+		rows.append(
+			{
+				"key": key,
+				"contact": contact,
+				"chat": None if contact else key,
+				"title": names.get(contact) or members[0].title or key,
+				"networks": sorted({networks.label(c.network) for c in members}),
+				"last_message_at": last.get("sent_at")
+				or max((c.last_message_at for c in members if c.last_message_at), default=None),
+				"direction": last.get("direction"),
+				"preview": messages.summary_text(last) if last else "",
+			}
+		)
+	return sorted(rows, key=lambda r: str(r["last_message_at"] or ""), reverse=True)
+
+
+def contact_names(contacts: list[str]) -> dict[str, str]:
+	rows = frappe.get_all(
+		"Contact",
+		filters={"name": ["in", list(set(contacts)) or [""]]},
+		fields=["name", "first_name", "last_name"],
+	)
+	return {r.name: " ".join(p for p in (r.first_name, r.last_name) if p) or r.name for r in rows}

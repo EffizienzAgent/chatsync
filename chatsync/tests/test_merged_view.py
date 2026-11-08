@@ -164,3 +164,46 @@ class TestBeeperType(ChatsyncTestCase):
 		self.assertEqual(
 			sorted((m["kind"], m["beeper_type"]) for m in rows), [("Other", "STICKER"), ("Text", None)]
 		)
+
+
+class TestConversations(ChatsyncTestCase):
+	def setUp(self):
+		super().setUp()
+		self.addCleanup(frappe.db.rollback)
+		self.addCleanup(frappe.set_user, "Administrator")
+		self.user = make_user("inbox", ["Chat User", "System Manager"])
+		self.account = make_account(self.user)
+
+	def chat(self, contact, network, last, text, **extra):
+		chat = make_chat(self.account, contact, network=network)
+		add(chat, last, text, **extra)
+		frappe.db.set_value("Chat", chat.name, "last_message_at", last)
+		return chat
+
+	def test_one_row_per_contact_newest_first(self):
+		anna, ben = make_contact("anna"), make_contact("ben")
+		self.chat(anna, "whatsapp", datetime(2026, 3, 1, 9), "<p>old <b>wa</b></p>")
+		self.chat(anna, "signal", datetime(2026, 3, 2, 9), "newest anna")
+		self.chat(ben, "linkedin", datetime(2026, 3, 1, 12), "ben", direction="Out")
+		other = make_account(make_user("inbox-other", ["Chat User"]))
+		make_chat(other, anna, network="telegram")
+		frappe.set_user(self.user)
+		rows = api.get_conversations()
+		self.assertEqual([r["contact"] for r in rows], [anna, ben])
+		self.assertEqual(rows[0]["networks"], ["Signal", "WhatsApp"])
+		self.assertEqual(rows[0]["preview"], "newest anna")
+		self.assertEqual(rows[0]["title"], frappe.db.get_value("Contact", anna, "first_name"))
+		self.assertEqual(str(rows[0]["last_message_at"]), "2026-03-02 09:00:00")
+		self.assertEqual((rows[1]["networks"], rows[1]["direction"]), (["LinkedIn"], "Out"))
+
+	def test_preview_is_plain_text_and_names_kinds(self):
+		contact = make_contact()
+		chat = self.chat(contact, "whatsapp", datetime(2026, 3, 1, 9), "<p>Hi <b>Max</b></p>")
+		frappe.set_user(self.user)
+		self.assertEqual(api.get_conversations()[0]["preview"], "Hi Max")
+		frappe.set_user("Administrator")
+		frappe.db.set_value(
+			"Chat Message", {"chat": chat.name}, {"kind": "Voice", "text": "", "transcript": "Ruf an"}
+		)
+		frappe.set_user(self.user)
+		self.assertEqual(api.get_conversations()[0]["preview"], "🎤 Ruf an")

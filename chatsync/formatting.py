@@ -26,13 +26,16 @@ TAGS = {
 }
 URL_SCHEMES = {"http", "https", "mailto"}
 LINK_REL = "noopener noreferrer"
-HTML_TAG = re.compile(r"</?[a-zA-Z][a-zA-Z0-9]*(\s[^<>]*)?/?>")
+HTML_ELEMENT = re.compile(rf"<({'|'.join(sorted(TAGS))})(\s[^<>]*)?>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+HTML_START = re.compile(r"\s*<p[\s>]", re.IGNORECASE)
+LINE_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
+ABSOLUTE_LINK = re.compile(r"(https?://|mailto:)", re.IGNORECASE)
 BLOCK_END = re.compile(r"<br\s*/?>|</(p|li|div|blockquote|pre|ul|ol|h[1-6])>", re.IGNORECASE)
 
 PLACEHOLDER = re.compile("\x00(\\d+)\x00")
 MONO_BLOCK = re.compile(r"```(.+?)```", re.DOTALL)
 INLINE_CODE = re.compile(r"`([^`\n]+)`")
-URL = re.compile(r"https?://[^\s<>\"'`]+")
+URL = re.compile(r"https?://[^\s<>\"'`\x00]+")
 URL_TRAILING = ".,;:!?*~)"
 MARKUP = [
 	(re.compile(rf"(?<![\w{m}]){m}(?=\S)([^\n]*?\S){m}(?![\w{m}])"), tag)
@@ -41,7 +44,8 @@ MARKUP = [
 
 
 def is_html(text: str) -> bool:
-	return bool(HTML_TAG.search(text))
+	"""Only real markup counts: an allowlisted element with its closing tag, a leading <p>, or <br>."""
+	return bool(HTML_START.match(text) or LINE_BREAK.search(text) or HTML_ELEMENT.search(text))
 
 
 def render(text: str | None) -> str:
@@ -61,7 +65,14 @@ def sanitize(text: str) -> str:
 		url_schemes=URL_SCHEMES,
 		link_rel=LINK_REL,
 		set_tag_attribute_values={"a": {"target": "_blank"}},
+		attribute_filter=absolute_links_only,
 	)
+
+
+def absolute_links_only(_tag: str, attribute: str, value: str) -> str | None:
+	if attribute == "href" and not ABSOLUTE_LINK.match(value.strip()):
+		return None
+	return value
 
 
 def link(url: str) -> str:
@@ -100,7 +111,10 @@ def render_markup(text: str) -> str:
 
 
 def plain(text: str | None) -> str:
-	"""Text without tags for previews, transcripts and tools; plain text passes unchanged."""
+	"""Text without tags for previews, transcripts and tools; plain text passes unchanged.
+
+	The result is raw text (entities decoded, "<" kept): escape it before putting it into HTML.
+	"""
 	if not text:
 		return ""
 	if not is_html(text):

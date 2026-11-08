@@ -15,7 +15,17 @@ class TestRenderHtml(ChatsyncTestCase):
 		self.assertEqual(html, "<p>Hi</p>")
 
 	def test_strips_unknown_tags_keeps_text(self):
-		self.assertEqual(render('<div class="x"><span style="color:red">Hi</span></div>'), "Hi")
+		self.assertEqual(
+			render('<p class="x"><span style="color:red">Hi</span> <font>x</font></p>'), "<p>Hi x</p>"
+		)
+
+	def test_only_absolute_links_keep_href(self):
+		for href in ("/api/method/logout", "//evil.com", "evil.com/x", "#top", "?a=1"):
+			with self.subTest(href):
+				html = render(f'<p><a href="{href}">Klick</a></p>')
+				self.assertNotIn("href", html)
+				self.assertIn("Klick", html)
+		self.assertIn('href="HTTPS://x.de"', render('<a href="HTTPS://x.de">x</a>'))
 
 	def test_links_only_safe_schemes(self):
 		self.assertEqual(
@@ -73,6 +83,22 @@ class TestRenderPlainText(ChatsyncTestCase):
 	def test_url_with_quotes_stays_inside_attribute(self):
 		html = render('https://x.de/"onmouseover="alert(1)')
 		self.assertNotIn('"onmouseover', html)
+
+	def test_url_does_not_swallow_code(self):
+		html = render("https://x.de/`a` and https://y.de```b```")
+		self.assertNotIn("\x00", html)
+		self.assertIn("<code>a</code>", html)
+		self.assertIn("<pre>b</pre>", html)
+		self.assertIn('href="https://x.de/"', html)
+
+	def test_tag_like_plain_text_stays_plain(self):
+		self.assertEqual(render("if a <b and c> d"), "if a &lt;b and c&gt; d")
+		self.assertEqual(plain("if a <b and c> d"), "if a <b and c> d")
+		self.assertEqual(render("x <unknown>y</unknown>"), "x &lt;unknown&gt;y&lt;/unknown&gt;")
+		self.assertEqual(render("<p>Hi Max!</p><p>LG!</p>"), "<p>Hi Max!</p><p>LG!</p>")
+		self.assertEqual(render("<p>offen"), "<p>offen</p>")
+		self.assertEqual(render("a<br>b"), "a<br>b")
+		self.assertEqual(render("sag <b>das</b> laut"), "sag <b>das</b> laut")
 
 	def test_newlines(self):
 		self.assertEqual(render("a\nb\r\nc"), "a<br>b<br>c")

@@ -1,0 +1,14 @@
+{
+ "doctype": "Page",
+ "name": "chat-view",
+ "page_name": "chat-view",
+ "title": "Chat",
+ "module": "Chat Sync",
+ "standard": "Yes",
+ "icon": "message-circle",
+ "roles": [
+  {
+   "role": "Chat User"
+  }
+ ]
+}

@@ -9,3 +9,18 @@ Only direct chats can be assigned,Nur Einzelchats können zugeordnet werden
 No enabled Chat Account for {0},Kein aktives Chat-Konto für {0}
 No permission for Contact {0},Keine Berechtigung für Kontakt {0}
 No permission for Chat {0},Keine Berechtigung für Chat {0}
+Reassign to another contact,Anderem Kontakt zuordnen
+Unassign,Zuordnung lösen
+Unassign this chat from the contact? Its messages will be deleted.,Chat vom Kontakt lösen? Die Nachrichten werden gelöscht.
+Archive,Ins Archiv
+Reassign,Zuordnen
+Reply,Antworten
+Loading older messages...,Ältere Nachrichten werden geladen...
+Sending is only possible from the chat view.,Senden ist nur in der Chat-Ansicht möglich.
+The message is empty.,Die Nachricht ist leer.
+Chat,Chat
+Contact,Kontakt
+Voice,Sprachnachricht
+Image,Bild
+File,Datei
+Other,Sonstiges

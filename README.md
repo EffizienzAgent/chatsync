@@ -76,6 +76,9 @@ What gets imported:
 - Chats and messages are visible only to their owner. The exceptions are the built-in
   **Administrator** user and the site's background jobs (the sync). The **System Manager** role has
   no bypass; it can manage Chat Accounts but not read other users' chats.
+- The **Chat User** role can only read chats and messages. Every change (assigning, unassigning,
+  sending, transcribing, archiving) goes through chatsync's own endpoints, and those that change an
+  existing chat are allowed for its owner only.
 - Voice notes are fetched from the Beeper Server when played or transcribed and are not stored.
   Only the transcript is saved with the message.
 - Sending is possible only from the chat view in a browser session. Requests that carry an

@@ -66,11 +66,56 @@ class TestPermissions(ChatsyncTestCase):
 		message.update({"chat": self.chat_a.name, "beeper_message_id": tag()})
 		self.assertFalse(frappe.has_permission("Chat", "create", doc=chat, user=self.user_b))
 		self.assertFalse(frappe.has_permission("Chat Message", "create", doc=message, user=self.user_b))
-		self.assertTrue(frappe.has_permission("Chat", "create", doc=chat, user=self.user_a))
-		self.assertTrue(frappe.has_permission("Chat Message", "create", doc=message, user=self.user_a))
+		self.assertTrue(frappe.has_permission("Chat", "read", doc=chat, user=self.user_a))
+		self.assertTrue(frappe.has_permission("Chat Message", "read", doc=message, user=self.user_a))
 
 	def test_new_doc_without_parent_is_left_to_validation(self):
-		self.assertTrue(frappe.has_permission("Chat", "create", doc=frappe.new_doc("Chat"), user=self.user_a))
+		self.assertTrue(frappe.has_permission("Chat", "create", doc=frappe.new_doc("Chat"), user=self.user_b))
+
+	def test_chat_user_cannot_write_chats_or_messages(self):
+		frappe.set_user(self.user_a)
+		new_chat = {
+			"doctype": "Chat",
+			"account": self.account.name,
+			"beeper_chat_id": f"!{tag()}:beeper.local",
+		}
+		new_message = {
+			"doctype": "Chat Message",
+			"chat": self.chat_a.name,
+			"beeper_message_id": tag(),
+			"sent_at": frappe.utils.now_datetime(),
+		}
+		for values in (new_chat, new_message):
+			with self.assertRaises(frappe.PermissionError):
+				frappe.get_doc(values).insert()
+		chat = frappe.get_doc("Chat", self.chat_a.name)
+		chat.title = "changed"
+		with self.assertRaises(frappe.PermissionError):
+			chat.save()
+		message = frappe.get_doc("Chat Message", self.message.name)
+		message.text = "forged"
+		with self.assertRaises(frappe.PermissionError):
+			message.save()
+
+	def test_forged_account_on_own_chat_is_refused(self):
+		other = make_user("c", ["Chat User"])
+		self.addCleanup(frappe.delete_doc, "User", other, force=True, ignore_permissions=True)
+		account = frappe.get_doc(
+			{"doctype": "Chat Account", "user": other, "base_url": "http://beeper.test", "access_token": "x"}
+		).insert(ignore_permissions=True)
+		chat = frappe.get_doc(
+			{"doctype": "Chat", "account": account.name, "beeper_chat_id": f"!{tag()}:beeper.local"}
+		).insert(ignore_permissions=True)
+		self.addCleanup(account.delete, ignore_permissions=True)
+		self.addCleanup(chat.delete, ignore_permissions=True)
+		frappe.set_user(other)
+		forged = frappe.get_doc("Chat", chat.name)
+		forged.account, forged.user = self.account.name, other
+		self.assertFalse(frappe.has_permission("Chat", "read", doc=forged, user=other))
+		with self.assertRaises(frappe.PermissionError):
+			forged.save()
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Chat", chat.name, "account"), account.name)
 
 	def test_administrator_and_jobs_bypass(self):
 		self.assertIn(self.chat_a.name, frappe.get_list("Chat", pluck="name", user="Administrator"))

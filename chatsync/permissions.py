@@ -10,7 +10,7 @@ def is_unrestricted(user: str) -> bool:
 def owner_of(doc) -> str | None:
 	if doc.doctype == "Chat Message":
 		return frappe.db.get_value("Chat", doc.chat, "user") if doc.chat else None
-	if doc.doctype == "Chat" and doc.is_new():
+	if doc.doctype == "Chat":
 		return frappe.db.get_value("Chat Account", doc.account, "user") if doc.account else None
 	return doc.get(OWNER_FIELD[doc.doctype])
 

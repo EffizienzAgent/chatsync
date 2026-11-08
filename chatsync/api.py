@@ -56,8 +56,12 @@ def check_contact(contact: str) -> None:
 		frappe.throw(frappe._("No permission for Contact {0}").format(contact), frappe.PermissionError)
 
 
-def check_chat(chat: str) -> None:
-	if not frappe.has_permission("Chat", "write", doc=chat):
+def check_chat(chat: str, write: bool = False) -> None:
+	"""Reading follows the permission rules; changing a chat is for its owner only."""
+	allowed = frappe.has_permission("Chat", "read", doc=chat)
+	if write:
+		allowed = allowed and frappe.db.get_value("Chat", chat, "user") == frappe.session.user
+	if not allowed:
 		frappe.throw(frappe._("No permission for Chat {0}").format(chat), frappe.PermissionError)
 
 
@@ -141,7 +145,7 @@ def create_contact_for_chat(beeper_chat_id: str) -> str:
 
 @frappe.whitelist()
 def unassign_chat(chat: str) -> None:
-	check_chat(chat)
+	check_chat(chat, write=True)
 	beeper_chat_id, contact, network, identifier, title = frappe.db.get_value(
 		"Chat", chat, ["beeper_chat_id", "contact", "network", "counterpart_username", "title"]
 	)
@@ -168,7 +172,7 @@ def unassign_chat(chat: str) -> None:
 
 @frappe.whitelist()
 def reassign_chat(chat: str, contact: str) -> str:
-	check_chat(chat)
+	check_chat(chat, write=True)
 	check_contact(contact)
 	beeper_chat_id = frappe.db.get_value("Chat", chat, "beeper_chat_id")
 	unassign_chat(chat)
@@ -252,7 +256,7 @@ def send_message(chat: str, text: str) -> dict:
 	no duplicate can arise (and sync's remove_vanished would drop a stray pending-ID row anyway).
 	"""
 	check_browser_session()
-	check_chat(chat)
+	check_chat(chat, write=True)
 	text = (text or "").strip()
 	if not text:
 		frappe.throw(frappe._("The message is empty."))
@@ -285,6 +289,6 @@ def pull_latest(chat: str, client, beeper_chat_id: str) -> list[dict]:
 @frappe.whitelist(methods=["POST"])
 def refresh_messages(chat: str) -> dict:
 	"""Read-only: fetch the newest page from Beeper and store it (used after a send to catch the confirmation)."""
-	check_chat(chat)
+	check_chat(chat, write=True)
 	client, beeper_chat_id = chat_client(chat)
 	return {"messages": pull_latest(chat, client, beeper_chat_id)}

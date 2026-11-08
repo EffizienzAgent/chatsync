@@ -71,7 +71,7 @@ def transcript_html(chat, rows: list[dict], start, end) -> str:
 
 @frappe.whitelist(methods=["POST"])
 def archive_chat(chat: str, date_from: str | None = None, date_to: str | None = None) -> str:
-	check_chat(chat)
+	check_chat(chat, write=True)
 	check_archive_role()
 	from docarchive.api import upload_document
 

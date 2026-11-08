@@ -95,9 +95,7 @@
   },
   {
    "role": "Chat User",
-   "read": 1,
-   "write": 1,
-   "create": 1
+   "read": 1
   }
  ]
 }

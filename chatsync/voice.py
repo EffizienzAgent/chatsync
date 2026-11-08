@@ -10,9 +10,9 @@ GONE = (404, 410)
 RANGE = re.compile(r"bytes=(\d*)-(\d*)")
 
 
-def load_audio(message: str) -> tuple[bytes, str]:
+def load_audio(message: str, write: bool = False) -> tuple[bytes, str]:
 	chat, kind, media_url = frappe.db.get_value("Chat Message", message, ["chat", "kind", "media_url"])
-	api.check_chat(chat)
+	api.check_chat(chat, write)
 	if kind != "Voice" or not media_url:
 		frappe.throw(frappe._("This message is not a voice message."))
 	client, _beeper_chat_id = api.chat_client(chat)
@@ -67,7 +67,7 @@ def play(message: str) -> Response:
 @frappe.whitelist(methods=["POST"])
 def transcribe(message: str) -> str:
 	service = transcription.provider()
-	audio, content_type = load_audio(message)
+	audio, content_type = load_audio(message, write=True)
 	text = service.transcribe(audio, content_type)
 	if not text:
 		frappe.throw(frappe._("The transcription is empty."))

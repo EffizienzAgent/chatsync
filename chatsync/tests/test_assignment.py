@@ -141,6 +141,17 @@ class TestAssignment(ChatsyncTestCase):
 		self.assertEqual(frappe.db.get_value("Chat", name, ["user", "contact"]), (USER, contact))
 		self.assertEqual(frappe.db.count("Chat", {"beeper_chat_id": chat["id"]}), 1)
 
+	def test_reader_who_is_not_owner_cannot_change_chat(self):
+		other = self.other_user_with_account()
+		account = frappe.db.get_value("Chat Account", {"user": other})
+		chat = frappe.get_doc(
+			{"doctype": "Chat", "account": account, "beeper_chat_id": f"!{tag()}:beeper.local"}
+		).insert(ignore_permissions=True)
+		self.assertTrue(frappe.has_permission("Chat", "read", doc=chat.name))
+		with self.assertRaises(frappe.PermissionError):
+			api.unassign_chat(chat.name)
+		self.assertTrue(frappe.db.exists("Chat", chat.name))
+
 	def test_assign_to_other_contact_replaces_rows(self):
 		chat = chat_json(self.number)
 		self.use(chat)

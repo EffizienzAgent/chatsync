@@ -6,7 +6,7 @@
 networks Beeper bridges end up in one place.
 
 - **One account per user.** Each user adds a **Chat Account** with the Beeper Server's base URL and
-  a token. Chats and messages are visible only to their owner.
+  a token. Chats and messages are visible only to their owner (see Privacy).
 - **Direct chats only.** Group chats are ignored.
 - **Matching.** A direct chat whose counterpart exposes a phone number (typically WhatsApp and
   Signal) is matched to a contact by that number; all other chats are assigned by hand ("Assign
@@ -53,7 +53,9 @@ The scheduler syncs every two minutes. Token and transcription keys are stored a
 - Otherwise a chat whose counterpart exposes a phone number (typically WhatsApp and Signal) is matched by it: contact numbers and the chat's
   number are normalised to E.164 with the region from *Chat Sync Settings*. Exactly one readable
   contact must match; two matches are ambiguous and left alone.
-- Chats without a phone number have nothing to match on. Use **Assign chat** on the Contact, or create a new
+- Chats without a phone number, and chats that phone matching does not find, are matched only through
+  stored chat identifiers (the chat ID, or the username or participant ID of a manual assignment).
+  Use **Assign chat** on the Contact, or create a new
   contact from an unassigned chat.
 - Unassigning a chat removes its messages and marks the chat as excluded for that contact, so it is
   not matched again.

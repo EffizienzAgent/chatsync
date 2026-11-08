@@ -29,7 +29,7 @@ stored. Without the hook every contact qualifies.
 The filter does not apply to chats assigned by hand ("Assign chat" on the Contact). Contacts the
 chat's owner cannot read are excluded by a separate permission check, independent of the filter.
 
-The function runs for each candidate contact whenever chats are matched, so keep it cheap.
+The function runs for each candidate contact whenever a chat is matched by phone number, so keep it cheap.
 
 ## Settings
 

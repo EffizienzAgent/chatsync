@@ -116,6 +116,9 @@ class TestChatView(IntegrationTestCase):
 		self.assertEqual([m["text"] for m in result["messages"]], ["late"])
 		self.assertEqual(self.fake.sent, [])
 
+	def test_refresh_is_post_only(self):
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[api.refresh_messages], ["POST"])
+
 	def test_send_rejects_without_request(self):
 		with patch.object(frappe.local, "request", None, create=True):
 			with self.assertRaises(frappe.PermissionError):

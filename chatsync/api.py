@@ -282,7 +282,7 @@ def pull_latest(chat: str, client, beeper_chat_id: str) -> list[dict]:
 	return [serialize(r) for r in rows]
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def refresh_messages(chat: str) -> dict:
 	"""Read-only: fetch the newest page from Beeper and store it (used after a send to catch the confirmation)."""
 	check_chat(chat)

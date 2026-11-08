@@ -184,9 +184,16 @@ class ChatView {
 	}
 
 	poll_sent(text, tries = 4) {
+		const chat = this.chat;
 		this.poll_timer = setTimeout(async () => {
 			if (!this.$pending) return;
-			const r = await frappe.call({ method: "chatsync.api.refresh_messages", args: { chat: this.chat } });
+			let r;
+			try {
+				r = await frappe.call({ method: "chatsync.api.refresh_messages", type: "POST", args: { chat } });
+			} catch (e) {
+				return this.give_up(chat);
+			}
+			if (chat !== this.chat) return;
 			const added = this.merge(r.message.messages);
 			if (added.some((m) => m.direction === "Out" && m.text === text)) {
 				this.clear_pending();
@@ -194,9 +201,18 @@ class ChatView {
 			} else if (tries > 1) {
 				this.poll_sent(text, tries - 1);
 			} else {
-				this.clear_pending();
+				this.give_up(chat);
 			}
 		}, 2500);
+	}
+
+	give_up(chat) {
+		if (chat !== this.chat) return;
+		this.clear_pending();
+		frappe.show_alert({
+			message: __("Not confirmed yet, it will appear at the next sync", null, CONTEXT),
+			indicator: "orange",
+		});
 	}
 
 	send() {

@@ -6,7 +6,7 @@ import frappe
 from chatsync import sync
 from chatsync.beeper import BeeperError
 from chatsync.messages import upsert
-from chatsync.tests.helpers import ChatsyncTestCase, tag
+from chatsync.tests.helpers import ChatsyncTestCase, tag, use_hooks
 from chatsync.tests.test_matching import make_contact
 
 USER = "Administrator"
@@ -47,6 +47,10 @@ def chat_json(phone=None, kind="single", last_days=0, others=1):
 		"lastActivity": ago(last_days),
 		"participants": {"items": people},
 	}
+
+
+def qualifies_none(contact):
+	return False
 
 
 class FakeBeeper:
@@ -110,6 +114,33 @@ class TestSync(ChatsyncTestCase):
 		self.assertTrue(account.initial_sync_done)
 		self.assertTrue(account.last_synced_at)
 		self.assertEqual([c[0] for c in fake.calls], [matched["id"]])
+
+	def test_stored_chat_survives_second_contact_with_same_number(self):
+		chat = chat_json(self.number)
+		first = message(chat["id"], 1, "first")
+		self.run_with(FakeBeeper([chat], {chat["id"]: [[first]]}))
+		make_contact(phones=[self.number])
+		self.run_with(FakeBeeper([chat], {chat["id"]: [[message(chat["id"], 0, "second"), first]]}))
+		(row,) = self.chats()
+		self.assertEqual(row.contact, self.contact)
+		self.assertEqual(self.texts(row.name), ["first", "second"])
+
+	def test_stored_chat_survives_contact_that_no_longer_qualifies(self):
+		chat = chat_json(self.number)
+		first = message(chat["id"], 1, "first")
+		self.run_with(FakeBeeper([chat], {chat["id"]: [[first]]}))
+		use_hooks(self, chatsync_contact_filter=["chatsync.tests.test_sync.qualifies_none"])
+		self.run_with(FakeBeeper([chat], {chat["id"]: [[message(chat["id"], 0, "second"), first]]}))
+		(row,) = self.chats()
+		self.assertEqual(row.contact, self.contact)
+		self.assertEqual(self.texts(row.name), ["first", "second"])
+
+	def test_identifier_row_moves_stored_chat(self):
+		chat = chat_json(self.number)
+		self.run_with(FakeBeeper([chat], {chat["id"]: [[message(chat["id"], 1, "first")]]}))
+		other = make_contact(identifiers=[{"network": "whatsapp", "beeper_chat_id": chat["id"]}])
+		self.run_with(FakeBeeper([chat], {chat["id"]: [[message(chat["id"], 0, "second")]]}))
+		self.assertEqual(self.chats()[0].contact, other)
 
 	def test_reactions_notices_hidden_skipped(self):
 		chat = chat_json(self.number)

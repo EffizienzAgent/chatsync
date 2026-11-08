@@ -6,7 +6,7 @@ from frappe.utils import now_datetime
 
 from chatsync import messages, sync
 from chatsync.beeper import BeeperError
-from chatsync.matching import counterpart, match, phone_index
+from chatsync.matching import counterpart, match_chat, phone_index
 
 UNASSIGNED_TIMEOUT = 5
 
@@ -115,7 +115,7 @@ def find_unassigned_chats(user: str | None = None, days: int = 14) -> list[dict]
 		cp = counterpart(raw)
 		if not cp:
 			continue
-		found = match(account.user, cp, index=index)
+		found = match_chat(account, cp, index=index)
 		if found.contact or found.excluded:
 			continue
 		result.append({**summary(raw, cp), "ambiguous": found.ambiguous})

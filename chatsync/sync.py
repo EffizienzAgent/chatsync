@@ -4,7 +4,7 @@ import frappe
 from frappe.utils import get_datetime, now_datetime
 
 from chatsync.beeper import BeeperAuthError, BeeperClient, BeeperError
-from chatsync.matching import counterpart, match, phone_index
+from chatsync.matching import counterpart, match_chat, phone_index
 from chatsync.messages import sort_order, to_site_time, upsert
 
 EDIT_WINDOW_DAYS = 2
@@ -66,7 +66,7 @@ def sync_account(account: str) -> None:
 			cp = counterpart(raw)
 			if not cp:
 				continue
-			found = match(doc.user, cp, index=index)
+			found = match_chat(doc, cp, index=index)
 			if not found.contact:
 				continue
 			try:
@@ -224,7 +224,7 @@ def rematch_contact(contact: str) -> None:
 		try:
 			for raw in all_chats(client_for(doc)):
 				cp = counterpart(raw)
-				if not cp or match(doc.user, cp, index=index).contact != contact:
+				if not cp or match_chat(doc, cp, index=index).contact != contact:
 					continue
 				chat = ensure_chat(doc, raw, cp, contact)
 				if not frappe.db.get_value("Chat", chat, "history_complete"):

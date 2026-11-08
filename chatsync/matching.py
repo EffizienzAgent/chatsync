@@ -89,7 +89,7 @@ def by_phone(user: str, phone: str, index: dict[str, list[str]]) -> Match | None
 	return Match(contacts[0], False, False) if len(contacts) == 1 else Match(None, True, False)
 
 
-def match(user: str, cp: Counterpart, index: dict[str, list[str]] | None = None) -> Match:
+def by_identifiers(user: str, cp: Counterpart) -> Match | None:
 	found = from_rows(user, identifier_rows(beeper_chat_id=cp.beeper_chat_id), cp.beeper_chat_id)
 	if found:
 		return found
@@ -97,8 +97,28 @@ def match(user: str, cp: Counterpart, index: dict[str, list[str]] | None = None)
 		found = from_rows(user, identifier_rows(network=cp.network, identifier=identifier), cp.beeper_chat_id)
 		if found:
 			return found
+	return None
+
+
+def match(user: str, cp: Counterpart, index: dict[str, list[str]] | None = None) -> Match:
+	found = by_identifiers(user, cp)
+	if found:
+		return found
 	if cp.phone:
 		found = by_phone(user, cp.phone, phone_index() if index is None else index)
 		if found:
 			return found
 	return Match(None, False, False)
+
+
+def match_chat(account, cp: Counterpart, index: dict[str, list[str]] | None = None) -> Match:
+	"""Like `match`, but a stored chat keeps its contact unless identifier rows say otherwise."""
+	found = by_identifiers(account.user, cp)
+	if found:
+		return found
+	stored = frappe.db.get_value(
+		"Chat", {"account": account.name, "beeper_chat_id": cp.beeper_chat_id}, "contact"
+	)
+	if stored and frappe.db.exists("Contact", stored) and readable(account.user, [stored]):
+		return Match(stored, False, False)
+	return match(account.user, cp, index=index)

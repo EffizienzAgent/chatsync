@@ -65,8 +65,6 @@ jobs:
           docker run -d --name db -p 3306:3306 -e MARIADB_ROOT_PASSWORD=123 mariadb:11.8 \
             --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci \
             --skip-character-set-client-handshake
-          docker run -d --name radicale -p 5232:5232 -e RADICALE_CONFIG=/config/config \
-            -v "$GITHUB_WORKSPACE/.github/radicale:/config:ro" tomsquest/docker-radicale:3.5.4.0
           until docker exec db healthcheck.sh --connect --innodb_initialized; do sleep 2; done
       - name: Install bench
         run: |

@@ -209,6 +209,30 @@ class TestSync(ChatsyncTestCase):
 		self.assertTrue(rows[0].history_complete)
 		self.assertEqual(self.texts(rows[0].name), ["ancient", "new"])
 
+	def logged(self, text):
+		return frappe.db.count("Error Log", {"method": ["like", f"%{text}%"]})
+
+	def test_errors_are_logged_on_change_only(self):
+		chat = chat_json(self.number)
+		reason = f"down-{tag()}"
+		down = FakeBeeper([chat], {})
+		down.chats = lambda cursor=None: (_ for _ in ()).throw(BeeperError(0, reason))
+		self.run_with(down)
+		self.run_with(down)
+		self.assertEqual(self.logged(reason), 1)
+		self.run_with(FakeBeeper([chat], {chat["id"]: [[message(chat["id"], 1)]]}))
+		self.assertFalse(frappe.db.get_value("Chat Account", self.account.name, "last_error"))
+		self.run_with(down)
+		self.assertEqual(self.logged(reason), 2)
+
+	def test_failing_chat_is_logged_on_change_only(self):
+		chat = chat_json(self.number)
+		fake = FakeBeeper([chat], {chat["id"]: [[message(chat["id"], 1)]]})
+		fake.fail_on = (chat["id"], 0)
+		self.run_with(fake)
+		self.run_with(fake)
+		self.assertEqual(self.logged(chat["id"]), 1)
+
 	def test_one_failing_chat_does_not_block_others(self):
 		bad, good = chat_json(self.number), chat_json(self.number)
 		fake = FakeBeeper(

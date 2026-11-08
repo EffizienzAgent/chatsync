@@ -52,11 +52,20 @@ def kept(chat: str) -> bool:
 	return False
 
 
-def fail(account: str | None, error: Exception) -> None:
-	frappe.log_error(title=f"Chat Sync failed: {error}")
-	if account:
-		frappe.db.set_value("Chat Account", account, "last_error", str(error)[:140], update_modified=False)
-		commit()
+def set_error(account: str, error: str) -> bool:
+	"""Stores the account's last error; True when it changed. Only a change is worth an Error Log,
+	so a Beeper Server that stays down does not log every two minutes."""
+	error = error[:140]
+	if frappe.db.get_value("Chat Account", account, "last_error") == error:
+		return False
+	frappe.db.set_value("Chat Account", account, "last_error", error, update_modified=False)
+	commit()
+	return True
+
+
+def fail(account: str, error: Exception) -> None:
+	if set_error(account, str(error)):
+		frappe.log_error(title=f"Chat Sync failed: {error}")
 
 
 def sync_account(account: str) -> None:
@@ -71,7 +80,7 @@ def sync_account(account: str) -> None:
 	try:
 		client = client_for(doc)
 		index = phone_index()
-		failed: list[str] = []
+		failed: list[tuple[str, str, str]] = []
 		for raw in walk_chats(client, threshold):
 			cp = counterpart(raw)
 			if not cp:
@@ -85,9 +94,8 @@ def sync_account(account: str) -> None:
 			except BeeperAuthError:
 				raise
 			except Exception as e:
-				failed.append(str(e))
+				failed.append((cp.beeper_chat_id, str(e), frappe.get_traceback()))
 				rollback()
-				frappe.log_error(title=f"Chat Sync failed for chat {cp.beeper_chat_id}: {e}")
 				continue
 			kept(chat)
 		queue_incomplete_histories(account)
@@ -95,14 +103,10 @@ def sync_account(account: str) -> None:
 		fail(account, e)
 		return
 	if failed:
-		frappe.db.set_value(
-			"Chat Account",
-			account,
-			"last_error",
-			f"{len(failed)} chat(s) failed, last: {failed[-1]}"[:140],
-			update_modified=False,
-		)
-		commit()
+		if set_error(account, f"{len(failed)} chat(s) failed, last: {failed[-1][1]}"):
+			for chat_id, error, traceback in failed:
+				frappe.log_error(title=f"Chat Sync failed for chat {chat_id}: {error}", message=traceback)
+			commit()
 		return
 	frappe.db.set_value(
 		"Chat Account",

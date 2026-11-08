@@ -53,6 +53,27 @@ class TestAssignment(ChatsyncTestCase):
 		self.assertEqual([r.beeper_chat_id for r in contact_doc.chat_identifiers], [chat["id"]])
 		self.assertFalse(contact_doc.chat_identifiers[0].excluded)
 
+	def test_assignment_does_not_save_the_contact(self):
+		chat = chat_json(self.number)
+		self.use(chat)
+		first, second = make_contact(), make_contact()
+		frappe.db.set_value(
+			"Contact", [first, second], "modified", "2000-01-01 00:00:00", update_modified=False
+		)
+		with patch.object(
+			frappe.get_doc("Contact", first).__class__, "save", side_effect=AssertionError("save")
+		):
+			name = api.assign_chat(chat["id"], first)
+			name = api.reassign_chat(name, second)
+			api.unassign_chat(name)
+		for contact in (first, second):
+			self.assertEqual(str(frappe.db.get_value("Contact", contact, "modified")), "2000-01-01 00:00:00")
+		rows = frappe.get_doc("Contact", second).chat_identifiers
+		self.assertEqual(
+			[(r.beeper_chat_id, r.excluded, r.parentfield) for r in rows],
+			[(chat["id"], 1, "chat_identifiers")],
+		)
+
 	def test_unassign_deletes_and_excludes(self):
 		chat = chat_json(self.number)
 		fake = self.use(chat, history={chat["id"]: [[message(chat["id"], 1)]]})

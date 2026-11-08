@@ -65,10 +65,28 @@ def check_chat(chat: str, write: bool = False) -> None:
 		frappe.throw(frappe._("No permission for Chat {0}").format(chat), frappe.PermissionError)
 
 
-def drop_rows(contact_doc, beeper_chat_id: str) -> None:
-	contact_doc.chat_identifiers = [
-		r for r in contact_doc.chat_identifiers if r.beeper_chat_id != beeper_chat_id
-	]
+def drop_rows(beeper_chat_id: str, contact: str | None = None) -> None:
+	filters = {"parenttype": "Contact", "beeper_chat_id": beeper_chat_id}
+	if contact:
+		filters["parent"] = contact
+	frappe.db.delete("Chat Identifier", filters)
+
+
+def add_row(contact: str, values: dict) -> None:
+	"""Written as a child row: saving the Contact would fire the host's hooks (pushes to other systems)."""
+	rows = frappe.get_all(
+		"Chat Identifier", filters={"parenttype": "Contact", "parent": contact}, pluck="idx"
+	)
+	frappe.get_doc(
+		{
+			"doctype": "Chat Identifier",
+			"parenttype": "Contact",
+			"parentfield": "chat_identifiers",
+			"parent": contact,
+			"idx": max(rows, default=0) + 1,
+			**values,
+		}
+	).insert(ignore_permissions=True)
 
 
 @frappe.whitelist()
@@ -107,21 +125,16 @@ def assign_chat(beeper_chat_id: str, contact: str) -> str:
 	account = session_account()
 	check_contact(contact)
 	raw, cp = direct_chat(sync.client_for(account), beeper_chat_id)
-	identifier = cp.username or cp.participant_id
-	with assignment_writes():
-		frappe.db.delete("Chat Identifier", {"parenttype": "Contact", "beeper_chat_id": beeper_chat_id})
-		doc = frappe.get_doc("Contact", contact)
-		drop_rows(doc, beeper_chat_id)
-		doc.append(
-			"chat_identifiers",
-			{
-				"network": cp.network,
-				"beeper_chat_id": beeper_chat_id,
-				"identifier": identifier,
-				"display_name": raw.get("title"),
-			},
-		)
-		doc.save(ignore_permissions=True)
+	drop_rows(beeper_chat_id)
+	add_row(
+		contact,
+		{
+			"network": cp.network,
+			"beeper_chat_id": beeper_chat_id,
+			"identifier": cp.username or cp.participant_id,
+			"display_name": raw.get("title"),
+		},
+	)
 	chat = sync.ensure_chat(account, raw, cp, contact)
 	if not frappe.db.get_value("Chat", chat, "history_complete"):
 		frappe.db.set_value("Chat", chat, "history_requested", 1, update_modified=False)
@@ -154,20 +167,17 @@ def unassign_chat(chat: str) -> None:
 	frappe.delete_doc("Chat", chat, ignore_permissions=True, force=True)
 	if not contact:
 		return
-	with assignment_writes():
-		doc = frappe.get_doc("Contact", contact)
-		drop_rows(doc, beeper_chat_id)
-		doc.append(
-			"chat_identifiers",
-			{
-				"network": network,
-				"beeper_chat_id": beeper_chat_id,
-				"identifier": identifier,
-				"display_name": title,
-				"excluded": 1,
-			},
-		)
-		doc.save(ignore_permissions=True)
+	drop_rows(beeper_chat_id, contact)
+	add_row(
+		contact,
+		{
+			"network": network,
+			"beeper_chat_id": beeper_chat_id,
+			"identifier": identifier,
+			"display_name": title,
+			"excluded": 1,
+		},
+	)
 
 
 @frappe.whitelist()

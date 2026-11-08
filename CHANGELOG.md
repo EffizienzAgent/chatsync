@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.0](https://github.com/EffizienzAgent/chatsync/compare/v0.1.0...v0.2.0) (2026-11-08)
+
+
+### Features
+
+* render Beeper HTML and WhatsApp markup safely in the chat view ([a9d2d3e](https://github.com/EffizienzAgent/chatsync/commit/a9d2d3e6354e41e9e9aed8cd8124547e4affb70c))
+* show images, videos and files in the chat view ([dfdc088](https://github.com/EffizienzAgent/chatsync/commit/dfdc088e08f7a9649ae6668f8ebe411e7b611817))
+* store all attachments and stream them via chatsync.media.serve ([57db6bb](https://github.com/EffizienzAgent/chatsync/commit/57db6bbdb3baccfc069c2555ec14acf6022a097a))
+
+
+### Bug Fixes
+
+* cap streamed attachments at 50 MB and forward Range to Beeper ([84545ab](https://github.com/EffizienzAgent/chatsync/commit/84545ab196c2c9c7d3ef977374a0fece73113bed))
+* forward only single byte ranges to Beeper and name the size on 416 ([43f1487](https://github.com/EffizienzAgent/chatsync/commit/43f1487152f6d3cc222f459ab7286e2092ee6c4c))
+* keep only absolute links, real markup and intact code in formatting ([624a841](https://github.com/EffizienzAgent/chatsync/commit/624a84192f9e9918bf465acefe2dc63f123d00a3))
+
 ## [0.1.0](https://github.com/EffizienzAgent/chatsync/compare/v0.0.1...v0.1.0) (2026-11-08)
 
 

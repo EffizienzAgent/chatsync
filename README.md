@@ -1,3 +1,7 @@
+Chat history from Beeper for the Frappe Framework
+
+<img src="docs/images/logo.png" alt="" width="96" align="right">
+
 # chatsync
 
 **chatsync** is a Frappe v16 app that shows the direct-chat history of your contacts on their
@@ -11,8 +15,17 @@ networks Beeper bridges end up in one place.
 - **Matching.** A direct chat whose counterpart exposes a phone number (typically WhatsApp and
   Signal) is matched to a contact by that number; all other chats are assigned by hand ("Assign
   chat" on the Contact). Chats without a matching contact are never stored.
+- **Conversations.** *Chat Sync → Conversations* (`/desk/chat-view`) lists your conversations,
+  newest first, with search. All chats with one contact (WhatsApp, Signal, LinkedIn, …) show as one
+  conversation, each message marked with its network; replies go to the chat chosen next to the
+  input (by default the one the contact last wrote in). On small screens list and conversation
+  show one at a time.
+- **From the contact.** The **Chat** button in the contact's activity opens the conversation, or,
+  when there is none yet, starts a WhatsApp or Signal chat with one of the contact's phone numbers
+  (nothing is sent until you write the first message).
 - **Chat view.** Read the history, play voice notes, view images and download files, send text
-  messages, archive a conversation. Formatting is shown: HTML from Beeper is sanitized to a small
+  messages, archive a conversation. Message types the view cannot show (location, contact cards)
+  appear as a placeholder naming the type; stickers show as images. Formatting is shown: HTML from Beeper is sanitized to a small
   allowlist (paragraphs, bold, italic, lists, quotes, code, http/https/mailto links), plain text
   gets WhatsApp markup (`*bold*`, `_italic_`, `~strike~`, `` `code` ``, ```` ```mono``` ````), links
   and line breaks.
@@ -40,7 +53,9 @@ The install creates the role **Chat User**. Grant it to everyone who connects an
 
 ## Setup
 
-1. Run a Beeper Server that your Frappe site can reach, with your chat networks connected.
+1. Run a Beeper Server that your Frappe site can reach, with your chat networks connected. For
+   Docker Compose setups (e.g. frappe_docker) see [docs/docker.md](docs/docker.md): image,
+   service, headless sign-in and security notes.
 2. Get an access token for it. On a headless server, use the `beeper` CLI against the server:
    `beeper auth email start` sends a code to your Beeper e-mail address, `beeper auth email response`
    completes the login with that code, and the new device is then verified by comparing emoji with a
@@ -67,7 +82,9 @@ The scheduler syncs every two minutes. Token and transcription keys are stored a
   contact from an unassigned chat.
 - Unassigning a chat removes its messages and marks the chat as excluded for that contact, so it is
   not matched again.
-- Unassigned direct chats (`chatsync.api.unassigned_chats`) can be ignored by their owner
+- Unassigned direct chats (`chatsync.api.unassigned_chats`) can be previewed by their owner
+  (`chatsync.api.preview_chat`: the newest messages, fetched live from Beeper and not stored; media
+  are named, not loaded; group chats and assigned chats are refused) and ignored
   (`chatsync.api.ignore_chat`), for example private chats. Only the chat ID is kept, on the user's
   Chat Account; an ignored chat no longer shows up there. When the chat's number belongs to exactly
   one readable contact that phone matching skips (see the contact filter), the entry names it as
@@ -96,9 +113,9 @@ What gets imported:
   (no File record, nothing on disk). Only their name, type and size are saved with the message, and
   for voice notes the transcript. Messages synced before these details were kept show their first
   attachment without name and size.
-- Sending is possible only from the chat view in a browser session. Requests that carry an
+- Sending, and starting a chat from a contact, are possible only in a browser session. Requests that carry an
   `Authorization` header (API keys, OAuth), and requests without the session's CSRF token, are
-  refused, and there is no background or MCP path to send.
+  refused, and there is no background or MCP path to send. Starting a chat sends no message.
 - Transcription sends the audio to Mistral (*Chat Sync Settings* → provider, API key and model).
   Leave the key empty to switch it off.
 - Archiving needs a docarchive role; the PDF contains the messages of the chosen period, with

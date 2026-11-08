@@ -222,16 +222,29 @@ def reassign_chat(chat: str, contact: str) -> str:
 
 
 SEND_COMMAND = "chatsync.api.send_message"
-MESSAGE_FIELDS = ["name", "sent_at", "direction", "sender_name", "kind", "text", "transcript", "media_url"]
+MESSAGE_FIELDS = [
+	"name",
+	"sent_at",
+	"direction",
+	"sender_name",
+	"kind",
+	"text",
+	"transcript",
+	"media_url",
+	"attachments",
+]
 
 
 def serialize(row: dict) -> dict:
-	media_url = row.pop("media_url", None)
+	attachments = messages.attachments_of(row)
+	row.pop("media_url", None)
+	row.pop("attachments", None)
 	return {
 		**row,
 		"sent_at": str(row["sent_at"]),
 		"html": formatting.render(row["text"]),
-		"has_media": bool(media_url),
+		"has_media": bool(attachments),
+		"attachments": messages.public(attachments),
 	}
 
 

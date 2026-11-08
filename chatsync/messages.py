@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -6,6 +7,8 @@ from frappe.utils import get_system_timezone
 
 SKIPPED_TYPES = {"REACTION", "NOTICE"}
 KINDS = {"TEXT": "Text", "VOICE": "Voice", "IMAGE": "Image", "FILE": "File", "VIDEO": "File"}
+TYPE_BY_KIND = {"Voice": "audio", "Image": "img"}
+PUBLIC_KEYS = ("type", "mime_type", "file_name", "file_size")
 
 
 def to_site_time(timestamp: str) -> datetime:
@@ -18,6 +21,29 @@ def sort_order(sort_key: str | None) -> tuple[int, int | str]:
 	if sort_key and sort_key.isdigit():
 		return (0, int(sort_key))
 	return (1, sort_key or "")
+
+
+def from_beeper(raw: dict) -> dict:
+	return {
+		"type": raw.get("type") or "unknown",
+		"mime_type": raw.get("mimeType"),
+		"file_name": raw.get("fileName"),
+		"file_size": raw.get("fileSize"),
+		"src_url": raw.get("srcURL"),
+	}
+
+
+def attachments_of(row) -> list[dict]:
+	"""Messages stored before attachments were kept only have media_url."""
+	if row.get("attachments"):
+		return json.loads(row["attachments"])
+	if row.get("media_url"):
+		return [{"type": TYPE_BY_KIND.get(row.get("kind"), "unknown"), "src_url": row["media_url"]}]
+	return []
+
+
+def public(attachments: list[dict]) -> list[dict]:
+	return [{key: item.get(key) for key in PUBLIC_KEYS} for item in attachments]
 
 
 def upsert(chat: str, raw: dict) -> str | None:
@@ -37,6 +63,7 @@ def upsert(chat: str, raw: dict) -> str | None:
 		"kind": KINDS.get(raw.get("type"), "Other"),
 		"text": raw.get("text"),
 		"media_url": attachments[0].get("srcURL") if attachments else None,
+		"attachments": json.dumps([from_beeper(a) for a in attachments]) if attachments else None,
 	}
 	if not existing:
 		try:

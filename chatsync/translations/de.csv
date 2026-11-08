@@ -47,3 +47,10 @@ Archived,Archiviert,Chat View
 Ignored Chats,Ignorierte Chats
 Beeper chat IDs the user chose to ignore among unassigned chats,"Beeper-Chat-IDs, die der Benutzer bei den nicht zugeordneten Chats ignoriert"
 Chat Identifiers,Chat-Kennungen
+Attachments,Anhänge
+[Image: {0}],[Bild: {0}],
+[Image],[Bild],
+This file is no longer available in Beeper.,Die Datei ist in Beeper nicht mehr verfügbar.,
+The file could not be loaded from Beeper.,Die Datei konnte nicht aus Beeper geladen werden.,
+This message has no such attachment.,Diese Nachricht hat keinen solchen Anhang.,
+Chat Message {0} not found,Chat-Nachricht {0} nicht gefunden,

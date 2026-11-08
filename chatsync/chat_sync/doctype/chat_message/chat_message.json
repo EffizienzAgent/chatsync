@@ -16,6 +16,7 @@
   "kind",
   "text",
   "media_url",
+  "attachments",
   "transcript",
   "transcript_provider"
  ],
@@ -72,6 +73,11 @@
    "fieldname": "media_url",
    "fieldtype": "Small Text",
    "label": "Media URL"
+  },
+  {
+   "fieldname": "attachments",
+   "fieldtype": "JSON",
+   "label": "Attachments"
   },
   {
    "fieldname": "transcript",

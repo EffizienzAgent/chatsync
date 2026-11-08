@@ -17,6 +17,12 @@ class BeeperAuthError(BeeperError):
 	pass
 
 
+class AssetTooLarge(Exception):
+	def __init__(self, limit: int):
+		super().__init__(f"Asset larger than {limit} bytes")
+		self.limit = limit
+
+
 class BeeperClient:
 	def __init__(self, base_url: str, token: str, timeout: int = 30):
 		self.base_url = base_url.rstrip("/")
@@ -44,12 +50,26 @@ class BeeperClient:
 		path = f"/v1/chats/{quote(chat_id, safe='')}/messages"
 		return self._request("POST", path, json={"text": text}).json()
 
-	def asset(self, url: str) -> tuple[bytes, str]:
-		response = self._get("/v1/assets/serve", {"url": url})
+	def asset(self, url: str, limit: int | None = None) -> tuple[bytes, str]:
+		response = self._asset_response(url)
 		content_type = response.headers.get("Content-Type")
 		if not content_type:
 			content_type = VOICE_FALLBACK if _is_voice(url) else DEFAULT_CONTENT_TYPE
-		return response.content, content_type
+		return _read(response, limit), content_type
+
+	def asset_part(
+		self, url: str, range_header: str, limit: int | None = None
+	) -> tuple[bytes, str, int, str | None]:
+		"""The Beeper Server answers Range requests with 206; a 200 means it sent the whole file."""
+		response = self._asset_response(url, {"Range": range_header})
+		content_type = response.headers.get("Content-Type") or DEFAULT_CONTENT_TYPE
+		data = _read(response, limit)
+		return data, content_type, response.status_code, response.headers.get("Content-Range")
+
+	def _asset_response(self, url: str, headers: dict | None = None):
+		return self._request(
+			"GET", "/v1/assets/serve", params={"url": url}, headers=headers or {}, stream=True
+		)
 
 	def setup_state(self) -> str:
 		return self._get("/v1/app/setup").json()["state"]
@@ -62,10 +82,14 @@ class BeeperClient:
 	def _get(self, path: str, params: dict | None = None):
 		return self._request("GET", path, params=params)
 
-	def _request(self, method: str, path: str, **kwargs):
+	def _request(self, method: str, path: str, headers: dict | None = None, **kwargs):
 		try:
 			response = self.session.request(
-				method, self.base_url + path, headers=self.headers, timeout=self.timeout, **kwargs
+				method,
+				self.base_url + path,
+				headers={**self.headers, **(headers or {})},
+				timeout=self.timeout,
+				**kwargs,
 			)
 		except requests.RequestException as e:
 			raise BeeperError(0, type(e).__name__) from None
@@ -73,6 +97,21 @@ class BeeperClient:
 			return response
 		error = BeeperAuthError if response.status_code == 401 else BeeperError
 		raise error(response.status_code, _message(response))
+
+
+def _read(response, limit: int | None) -> bytes:
+	length = response.headers.get("Content-Length")
+	if limit and length and length.isdigit() and int(length) > limit:
+		response.close()
+		raise AssetTooLarge(limit)
+	chunks, size = [], 0
+	for chunk in response.iter_content(64 * 1024):
+		size += len(chunk)
+		if limit and size > limit:
+			response.close()
+			raise AssetTooLarge(limit)
+		chunks.append(chunk)
+	return b"".join(chunks)
 
 
 def _cursor(cursor: str | None) -> dict:

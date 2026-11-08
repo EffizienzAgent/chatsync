@@ -132,7 +132,9 @@ class ChatView {
 	bubble(message) {
 		const out = message.direction === "Out";
 		const $bubble = $(`<div class="chat-bubble"></div>`);
-		if (message.kind === "Voice" && message.has_media) this.voice_player(message).appendTo($bubble);
+		if (message.attachments?.[0]?.too_large && ["Voice", "Image", "File"].includes(message.kind))
+			this.too_large().appendTo($bubble);
+		else if (message.kind === "Voice" && message.has_media) this.voice_player(message).appendTo($bubble);
 		else if (["Image", "File"].includes(message.kind) && message.attachments?.length)
 			message.attachments.forEach((item, index) => this.attachment(message, item, index).appendTo($bubble));
 		else if (message.kind !== "Text") $(`<div class="chat-kind"></div>`).text(__(message.kind, null, CONTEXT)).appendTo($bubble);
@@ -151,6 +153,7 @@ class ChatView {
 	}
 
 	attachment(message, item, index) {
+		if (item.too_large) return this.too_large();
 		const url = this.media_url(message, index);
 		if (item.type === "img" && (!item.mime_type || IMAGE_TYPES.includes(item.mime_type))) {
 			const $image = $(`<img class="chat-image" loading="lazy">`).attr({ src: url, alt: item.file_name || "" });
@@ -168,6 +171,10 @@ class ChatView {
 		return $(`<a class="chat-file" download></a>`)
 			.attr("href", url)
 			.text(`📎 ${item.file_name || __("File", null, CONTEXT)}${size}`);
+	}
+
+	too_large() {
+		return $(`<div class="chat-kind"></div>`).text(__("File too large for the preview, please open it in Beeper"));
 	}
 
 	file_size(bytes) {

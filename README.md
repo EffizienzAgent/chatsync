@@ -18,7 +18,8 @@ networks Beeper bridges end up in one place.
   and line breaks.
 - **Images and files.** Streamed from the Beeper Server on demand and never stored. Images
   (JPEG, PNG, GIF, WebP, checked by their bytes) are shown inline, MP4/WebM videos play inline,
-  everything else (SVG included) is offered as a download.
+  everything else (SVG included) is offered as a download. Files over 50 MB are not
+  streamed ("open it in Beeper"); seeking in audio and video is passed on to the Beeper Server.
 - **Voice notes.** Streamed from the Beeper Server on demand and never stored. Transcription on
   demand through Mistral.
 - **Archiving.** Optionally save a conversation as a PDF to

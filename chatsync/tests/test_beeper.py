@@ -3,7 +3,7 @@ from unittest.mock import patch
 import requests
 from frappe.tests import IntegrationTestCase
 
-from chatsync.beeper import BeeperAuthError, BeeperClient, BeeperError
+from chatsync.beeper import AssetTooLarge, BeeperAuthError, BeeperClient, BeeperError
 
 BASE = "https://beeper.example.test"
 TOKEN = "token-1a2b3c"
@@ -17,6 +17,16 @@ class FakeResponse:
 		self.content = content
 		self.headers = headers or {}
 		self.text = str(payload)
+		self.read = 0
+		self.closed = False
+
+	def iter_content(self, chunk_size):
+		for start in range(0, len(self.content), 4):
+			self.read += 1
+			yield self.content[start : start + 4]
+
+	def close(self):
+		self.closed = True
 
 	@property
 	def ok(self):
@@ -119,3 +129,33 @@ class TestBeeperClient(IntegrationTestCase):
 			self.assertEqual(self.client.asset("mxc://x/a"), (b"b", "audio/mpeg"))
 			self.assertEqual(self.client.asset("mxc://x/blob"), (b"c", "application/octet-stream"))
 		self.assertEqual(self.calls[0][2]["params"], {"url": "mxc://x/voice.ogg"})
+
+	def test_asset_streams_within_limit(self):
+		with self.serve(FakeResponse(content=b"0123456789")):
+			self.assertEqual(
+				self.client.asset("mxc://x/a", limit=10), (b"0123456789", "application/octet-stream")
+			)
+		self.assertTrue(self.calls[0][2]["stream"])
+
+	def test_asset_over_content_length_is_not_read(self):
+		response = FakeResponse(content=b"0123456789", headers={"Content-Length": "10"})
+		with self.serve(response), self.assertRaises(AssetTooLarge):
+			self.client.asset("mxc://x/a", limit=9)
+		self.assertEqual(response.read, 0)
+		self.assertTrue(response.closed)
+
+	def test_asset_stream_aborts_past_limit(self):
+		response = FakeResponse(content=b"0123456789" * 10)
+		with self.serve(response), self.assertRaises(AssetTooLarge):
+			self.client.asset("mxc://x/a", limit=9)
+		self.assertEqual(response.read, 3)
+		self.assertTrue(response.closed)
+
+	def test_asset_part_forwards_range(self):
+		headers = {"Content-Type": "video/mp4", "Content-Range": "bytes 2-4/10"}
+		with self.serve(FakeResponse(status_code=206, content=b"234", headers=headers)):
+			part = self.client.asset_part("mxc://x/v", "bytes=2-4", limit=10)
+		self.assertEqual(part, (b"234", "video/mp4", 206, "bytes 2-4/10"))
+		kwargs = self.calls[0][2]
+		self.assertEqual(kwargs["headers"]["Range"], "bytes=2-4")
+		self.assertEqual(kwargs["headers"]["Authorization"], f"Bearer {TOKEN}")

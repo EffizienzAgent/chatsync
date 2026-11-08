@@ -9,6 +9,7 @@ SKIPPED_TYPES = {"REACTION", "NOTICE"}
 KINDS = {"TEXT": "Text", "VOICE": "Voice", "IMAGE": "Image", "FILE": "File", "VIDEO": "File"}
 TYPE_BY_KIND = {"Voice": "audio", "Image": "img"}
 PUBLIC_KEYS = ("type", "mime_type", "file_name", "file_size")
+MAX_BYTES = 50 * 1024 * 1024
 
 
 def to_site_time(timestamp: str) -> datetime:
@@ -42,8 +43,14 @@ def attachments_of(row) -> list[dict]:
 	return []
 
 
+def too_large(item: dict) -> bool:
+	return (item.get("file_size") or 0) > MAX_BYTES
+
+
 def public(attachments: list[dict]) -> list[dict]:
-	return [{key: item.get(key) for key in PUBLIC_KEYS} for item in attachments]
+	return [
+		{**{key: item.get(key) for key in PUBLIC_KEYS}, "too_large": too_large(item)} for item in attachments
+	]
 
 
 def upsert(chat: str, raw: dict) -> str | None:

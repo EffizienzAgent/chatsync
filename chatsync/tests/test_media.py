@@ -5,7 +5,7 @@ from unittest.mock import patch
 import frappe
 
 from chatsync import api, media, sync
-from chatsync.beeper import BeeperError
+from chatsync.beeper import AssetTooLarge, BeeperError
 from chatsync.messages import upsert
 from chatsync.tests.helpers import ChatsyncTestCase, tag
 from chatsync.tests.test_matching import make_contact
@@ -36,12 +36,26 @@ class AssetBeeper(VoiceBeeper):
 	def __init__(self, *args):
 		super().__init__(*args)
 		self.assets = {}
+		self.parts = {}
+		self.ranges = []
+		self.limits = []
 
-	def asset(self, url):
+	def asset(self, url, limit=None):
 		self.requested.append(url)
+		self.limits.append(limit)
 		if self.error:
 			raise self.error
 		return self.assets[url]
+
+	def asset_part(self, url, range_header, limit=None):
+		self.ranges.append((url, range_header))
+		self.limits.append(limit)
+		if self.error:
+			raise self.error
+		if url in self.parts:
+			return self.parts[url]
+		data, content_type = self.assets[url]
+		return data, content_type, 200, None
 
 
 def files_on_disk():
@@ -132,6 +146,7 @@ class TestMedia(ChatsyncTestCase):
 					"mime_type": "application/pdf",
 					"file_name": "Angebot.pdf",
 					"file_size": 2048,
+					"too_large": False,
 				}
 			],
 		)
@@ -225,3 +240,51 @@ class TestMedia(ChatsyncTestCase):
 		with self.assertRaises(frappe.ValidationError) as ctx:
 			self.serve(name)
 		self.assertIn("no longer available", str(ctx.exception))
+
+	def test_over_cap_is_refused_without_fetching(self):
+		size = media.MAX_BYTES + 1
+		name = self.store("FILE", attachment("mxc://big", "unknown", "application/zip", "big.zip", size))
+		with self.assertRaises(media.FileTooLarge) as ctx:
+			self.serve(name)
+		self.assertIn("too large", str(ctx.exception))
+		frappe.local.lang = "de"
+		self.addCleanup(setattr, frappe.local, "lang", "en")
+		with self.assertRaises(media.FileTooLarge) as ctx:
+			self.serve(name)
+		self.assertIn("Datei zu groß für die Vorschau, bitte in Beeper öffnen", str(ctx.exception))
+		frappe.local.lang = "en"
+		self.assertEqual(self.fake.requested, [])
+		self.assertEqual(self.fake.ranges, [])
+		[row] = api.get_messages(self.chat)["messages"]
+		self.assertTrue(row["attachments"][0]["too_large"])
+
+	def test_upstream_over_cap_is_refused(self):
+		name = self.image(PNG)
+		self.fake.error = AssetTooLarge(media.MAX_BYTES)
+		with self.assertRaises(media.FileTooLarge):
+			self.serve(name)
+		self.assertEqual(self.fake.limits, [media.MAX_BYTES])
+
+	def test_normal_fetch_is_capped(self):
+		self.serve(self.image(PNG))
+		self.assertEqual(self.fake.limits, [media.MAX_BYTES])
+		[row] = api.get_messages(self.chat)["messages"]
+		self.assertFalse(row["attachments"][0]["too_large"])
+
+	def test_range_is_forwarded_upstream(self):
+		self.fake.parts["mxc://v"] = (b"234", "application/octet-stream", 206, "bytes 2-4/10")
+		name = self.store("VIDEO", attachment("mxc://v", "video", "video/mp4", "clip.mp4"))
+		response = self.serve(name, range_header="bytes=2-4")
+		self.assertEqual(response.status_code, 206)
+		self.assertEqual(response.data, b"234")
+		self.assertEqual(response.mimetype, "video/mp4")
+		self.assertEqual(response.headers["Content-Range"], "bytes 2-4/10")
+		self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+		self.assertEqual(self.fake.ranges, [("mxc://v", "bytes=2-4")])
+		self.assertEqual(self.fake.requested, [])
+
+	def test_upstream_unsatisfiable_range(self):
+		name = self.store("VOICE", attachment("mxc://a", "audio", "audio/ogg"))
+		self.fake.error = BeeperError(416, "range")
+		response = self.serve(name, range_header="bytes=99-")
+		self.assertEqual(response.status_code, 416)

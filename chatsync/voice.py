@@ -2,7 +2,7 @@ import frappe
 from werkzeug.wrappers import Response
 
 from chatsync import api, media, transcription
-from chatsync.beeper import VOICE_FALLBACK, BeeperError
+from chatsync.beeper import VOICE_FALLBACK, AssetTooLarge, BeeperError
 
 
 def load_audio(message: str, write: bool = False) -> tuple[bytes, str]:
@@ -12,7 +12,9 @@ def load_audio(message: str, write: bool = False) -> tuple[bytes, str]:
 		frappe.throw(frappe._("This message is not a voice message."))
 	client, _beeper_chat_id = api.chat_client(chat)
 	try:
-		audio, content_type = client.asset(media_url)
+		audio, content_type = client.asset(media_url, media.MAX_BYTES)
+	except AssetTooLarge:
+		media.refuse_too_large()
 	except BeeperError as e:
 		if e.status in media.GONE:
 			frappe.throw(frappe._("This voice message is no longer available in Beeper."))

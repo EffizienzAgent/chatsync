@@ -2,8 +2,8 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
-from chatsync import api, sync, transcription, voice
-from chatsync.beeper import BeeperError
+from chatsync import api, media, sync, transcription, voice
+from chatsync.beeper import AssetTooLarge, BeeperError
 from chatsync.messages import upsert
 from chatsync.tests.helpers import ChatsyncTestCase, tag
 from chatsync.tests.test_assignment import AssignmentBeeper
@@ -22,7 +22,7 @@ class VoiceBeeper(AssignmentBeeper):
 		self.error = None
 		self.requested = []
 
-	def asset(self, url):
+	def asset(self, url, limit=None):
 		self.requested.append(url)
 		if self.error:
 			raise self.error
@@ -173,3 +173,8 @@ class TestVoice(ChatsyncTestCase):
 	def test_provider_factory(self):
 		provider = transcription.provider()
 		self.assertIsInstance(provider, transcription.MistralProvider)
+
+	def test_too_large_voice_message(self):
+		self.fake.error = AssetTooLarge(media.MAX_BYTES)
+		with self.assertRaises(media.FileTooLarge):
+			self.play()

@@ -7,10 +7,11 @@ import frappe
 from werkzeug.wrappers import Response
 
 from chatsync import api
-from chatsync.beeper import VOICE_FALLBACK, BeeperError
-from chatsync.messages import attachments_of
+from chatsync.beeper import VOICE_FALLBACK, AssetTooLarge, BeeperError
+from chatsync.messages import MAX_BYTES, attachments_of, too_large
 
 GONE = (404, 410)
+UNSATISFIABLE = 416
 RANGE = re.compile(r"bytes=(\d*)-(\d*)")
 DOWNLOAD = "application/octet-stream"
 VIDEO_TYPES = {"video/mp4", "video/webm"}
@@ -31,11 +32,22 @@ def sniff_image(data: bytes) -> str | None:
 	return None
 
 
-def fetch(chat: str, src_url: str) -> tuple[bytes, str]:
-	client, _beeper_chat_id = api.chat_client(chat)
+class FileTooLarge(frappe.ValidationError):
+	http_status_code = 413
+
+
+def refuse_too_large():
+	frappe.throw(frappe._("File too large for the preview, please open it in Beeper"), FileTooLarge)
+
+
+def fetch(function, *args):
 	try:
-		return client.asset(src_url)
+		return function(*args)
+	except AssetTooLarge:
+		refuse_too_large()
 	except BeeperError as e:
+		if e.status == UNSATISFIABLE:
+			raise
 		if e.status in GONE:
 			frappe.throw(frappe._("This file is no longer available in Beeper."))
 		frappe.throw(frappe._("The file could not be loaded from Beeper."))
@@ -92,19 +104,55 @@ def respond(
 	return response
 
 
+def declared_types(item: dict, upstream: str) -> list[str]:
+	return [t.lower() for t in (item.get("mime_type"), upstream) if t]
+
+
+def is_image(item: dict, upstream: str = "") -> bool:
+	return item.get("type") == "img" or any(t.startswith("image/") for t in declared_types(item, upstream))
+
+
+def stream_type(item: dict, upstream: str = "") -> str | None:
+	"""Content type for audio and MP4/WebM video, which play inline with Range support."""
+	declared = declared_types(item, upstream)
+	if is_image(item, upstream):
+		return None
+	if item.get("type") == "audio" or any(t.startswith("audio/") for t in declared):
+		return next((t for t in declared if t.startswith("audio/")), VOICE_FALLBACK)
+	if item.get("type") == "video":
+		return next((t for t in declared if t in VIDEO_TYPES), None)
+	return None
+
+
 def media_response(item: dict, data: bytes, upstream: str) -> Response:
-	declared = [t.lower() for t in (item.get("mime_type"), upstream) if t]
-	kind = item.get("type")
 	inline = disposition("inline", item.get("file_name"))
-	if kind == "img" or any(t.startswith("image/") for t in declared):
+	if is_image(item, upstream):
 		if image := sniff_image(data):
 			return respond(data, image, inline, "private, max-age=300")
-	elif kind == "audio" or any(t.startswith("audio/") for t in declared):
-		audio = next((t for t in declared if t.startswith("audio/")), VOICE_FALLBACK)
-		return respond(data, audio, inline, ranges=True)
-	elif kind == "video" and (video := next((t for t in declared if t in VIDEO_TYPES), None)):
-		return respond(data, video, inline, ranges=True)
+	elif content_type := stream_type(item, upstream):
+		return respond(data, content_type, inline, ranges=True)
 	return respond(data, DOWNLOAD, disposition("attachment", item.get("file_name")))
+
+
+def ranged_response(client, item: dict, range_header: str) -> Response:
+	try:
+		data, upstream, status, content_range = fetch(
+			client.asset_part, item["src_url"], range_header, MAX_BYTES
+		)
+	except BeeperError:
+		response = Response(status=UNSATISFIABLE)
+		response.headers["Cache-Control"] = "no-store"
+		response.headers["X-Content-Type-Options"] = "nosniff"
+		return response
+	content_type = stream_type(item, upstream)
+	inline = disposition("inline", item.get("file_name"))
+	if status != 206 or not content_range:
+		return respond(data, content_type, inline, ranges=True)
+	response = respond(data, content_type, inline)
+	response.status_code = 206
+	response.headers["Content-Range"] = content_range
+	response.headers["Accept-Ranges"] = "bytes"
+	return response
 
 
 @frappe.whitelist(methods=["GET"])
@@ -120,5 +168,11 @@ def serve(message: str, index: int = 0) -> Response:
 	if not 0 <= index < len(attachments) or not attachments[index].get("src_url"):
 		frappe.throw(frappe._("This message has no such attachment."))
 	item = attachments[index]
-	data, upstream = fetch(row.chat, item["src_url"])
+	if too_large(item):
+		refuse_too_large()
+	client, _beeper_chat_id = api.chat_client(row.chat)
+	range_header = frappe.get_request_header("Range")
+	if range_header and stream_type(item):
+		return ranged_response(client, item, range_header)
+	data, upstream = fetch(client.asset, item["src_url"], MAX_BYTES)
 	return media_response(item, data, upstream)

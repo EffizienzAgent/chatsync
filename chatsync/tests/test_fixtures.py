@@ -11,3 +11,6 @@ class TestFixtures(IntegrationTestCase):
 			{row.fieldname: row.label for row in labels},
 			{"chat_section": "Chat Identifiers", "chat_identifiers": "Chat Identifiers"},
 		)
+
+	def test_chat_identifiers_are_read_only(self):
+		self.assertEqual(frappe.db.get_value("Custom Field", "Contact-chat_identifiers", "read_only"), 1)

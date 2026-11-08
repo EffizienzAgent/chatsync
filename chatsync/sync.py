@@ -274,6 +274,19 @@ def identity(doc) -> tuple:
 	return phones, identifiers
 
 
+def keep_chat_identifiers(doc, method=None) -> None:
+	"""Rows are written by assignments and syncs only; a form that missed them must not delete or add any."""
+	if doc.is_new() or frappe.flags.in_chat_assignment:
+		return
+	rows = frappe.get_all(
+		"Chat Identifier",
+		filters={"parenttype": "Contact", "parentfield": "chat_identifiers", "parent": doc.name},
+		fields=["*"],
+		order_by="idx",
+	)
+	doc.set("chat_identifiers", rows)
+
+
 def on_contact_update(doc, method=None) -> None:
 	if frappe.flags.in_import or frappe.flags.in_carddav_import or frappe.flags.in_chat_assignment:
 		return

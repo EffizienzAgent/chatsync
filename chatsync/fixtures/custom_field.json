@@ -22,6 +22,7 @@
   "fieldtype": "Table",
   "label": "Chat Identifiers",
   "options": "Chat Identifier",
+  "read_only": 1,
   "insert_after": "chat_section",
   "name": "Contact-chat_identifiers"
  }

@@ -74,6 +74,7 @@ class ChatView {
 					.call({ method: "chatsync.api.reassign_chat", args: { chat: this.chat, contact } })
 					.then((r) => {
 						dialog.hide();
+						this.forget_contacts(contact);
 						frappe.set_route("chat-view", r.message);
 					});
 			},
@@ -111,8 +112,15 @@ class ChatView {
 		frappe.confirm(__("Unassign this chat from the contact? Its messages will be deleted."), () =>
 			frappe
 				.call({ method: "chatsync.api.unassign_chat", args: { chat: this.chat } })
-				.then(() => frappe.set_route(this.data.chat.contact ? ["Form", "Contact", this.data.chat.contact] : ["List", "Chat"]))
+				.then(() => {
+					this.forget_contacts();
+					frappe.set_route(this.data.chat.contact ? ["Form", "Contact", this.data.chat.contact] : ["List", "Chat"]);
+				})
 		);
+	}
+
+	forget_contacts(...extra) {
+		[this.data.chat.contact, ...extra].filter(Boolean).forEach((contact) => frappe.model.remove_from_locals("Contact", contact));
 	}
 
 	day_of(message) {

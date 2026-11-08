@@ -288,3 +288,16 @@ class TestMedia(ChatsyncTestCase):
 		self.fake.error = BeeperError(416, "range")
 		response = self.serve(name, range_header="bytes=99-")
 		self.assertEqual(response.status_code, 416)
+		self.assertEqual(response.headers["Content-Range"], "bytes */*")
+		sized = self.store("VOICE", attachment("mxc://a", "audio", "audio/ogg", size=40))
+		self.assertEqual(self.serve(sized, range_header="bytes=99-").headers["Content-Range"], "bytes */40")
+
+	def test_multi_range_is_not_forwarded(self):
+		self.fake.assets["mxc://v"] = (b"0123456789", "")
+		name = self.store("VIDEO", attachment("mxc://v", "video", "video/mp4", "clip.mp4"))
+		response = self.serve(name, range_header="bytes=0-1,5-9")
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data, b"0123456789")
+		self.assertNotIn("Content-Range", response.headers)
+		self.assertEqual(self.fake.ranges, [])
+		self.assertEqual(self.fake.limits, [media.MAX_BYTES])

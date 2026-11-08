@@ -141,6 +141,7 @@ def ranged_response(client, item: dict, range_header: str) -> Response:
 		)
 	except BeeperError:
 		response = Response(status=UNSATISFIABLE)
+		response.headers["Content-Range"] = f"bytes */{item.get('file_size') or '*'}"
 		response.headers["Cache-Control"] = "no-store"
 		response.headers["X-Content-Type-Options"] = "nosniff"
 		return response
@@ -172,7 +173,7 @@ def serve(message: str, index: int = 0) -> Response:
 		refuse_too_large()
 	client, _beeper_chat_id = api.chat_client(row.chat)
 	range_header = frappe.get_request_header("Range")
-	if range_header and stream_type(item):
+	if range_header and RANGE.fullmatch(range_header.strip()) and stream_type(item):
 		return ranged_response(client, item, range_header)
 	data, upstream = fetch(client.asset, item["src_url"], MAX_BYTES)
 	return media_response(item, data, upstream)

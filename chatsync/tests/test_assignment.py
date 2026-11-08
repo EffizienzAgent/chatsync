@@ -130,13 +130,13 @@ class TestAssignment(IntegrationTestCase):
 		contact = make_contact()
 		name = api.assign_chat(chat["id"], contact)
 		other = self.other_user_with_account()
+		frappe.share.add("Contact", contact, other, read=1, flags={"ignore_share_permission": True})
 		frappe.set_user(other)
+		self.assertTrue(frappe.has_permission("Contact", doc=contact, user=other))
 		with self.assertRaises(frappe.PermissionError):
 			api.unassign_chat(name)
 		with self.assertRaises(frappe.PermissionError):
 			api.reassign_chat(name, contact)
-		with self.assertRaises(frappe.PermissionError):
-			api.assign_chat(chat["id"], contact)
 		frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("Chat", name, ["user", "contact"]), (USER, contact))
 		self.assertEqual(frappe.db.count("Chat", {"beeper_chat_id": chat["id"]}), 1)

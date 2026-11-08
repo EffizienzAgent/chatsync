@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo
 import frappe
 from frappe.utils import get_system_timezone
 
+from chatsync import formatting
+
 SKIPPED_TYPES = {"REACTION", "NOTICE"}
 KINDS = {"TEXT": "Text", "VOICE": "Voice", "IMAGE": "Image", "FILE": "File", "VIDEO": "File"}
 TYPE_BY_KIND = {"Voice": "audio", "Image": "img"}
@@ -53,6 +55,45 @@ def public(attachments: list[dict]) -> list[dict]:
 	]
 
 
+def is_shown(raw: dict) -> bool:
+	return raw.get("type") not in SKIPPED_TYPES and not raw.get("isHidden") and not raw.get("isDeleted")
+
+
+def values_from(raw: dict) -> dict:
+	attachments = raw.get("attachments") or []
+	kind = KINDS.get(raw.get("type"), "Other")
+	return {
+		"sort_key": raw.get("sortKey"),
+		"sent_at": to_site_time(raw["timestamp"]),
+		"direction": "Out" if raw.get("isSender") else "In",
+		"sender_name": raw.get("senderName"),
+		"kind": kind,
+		"beeper_type": raw.get("type") if kind == "Other" else None,
+		"text": raw.get("text"),
+		"media_url": attachments[0].get("srcURL") if attachments else None,
+		"attachments": json.dumps([from_beeper(a) for a in attachments]) if attachments else None,
+	}
+
+
+def preview(raw: dict) -> dict:
+	"""A Beeper message shaped like a stored one for the chat view, without its media URLs."""
+	values = values_from(raw)
+	attachments = [from_beeper(a) for a in raw.get("attachments") or []]
+	return {
+		"name": raw["id"],
+		"sent_at": str(values["sent_at"]),
+		"direction": values["direction"],
+		"sender_name": values["sender_name"],
+		"kind": values["kind"],
+		"beeper_type": values["beeper_type"],
+		"text": values["text"],
+		"transcript": None,
+		"html": formatting.render(values["text"]),
+		"has_media": bool(attachments),
+		"attachments": public(attachments),
+	}
+
+
 def upsert(chat: str, raw: dict) -> str | None:
 	if raw.get("type") in SKIPPED_TYPES or raw.get("isHidden"):
 		return None
@@ -61,17 +102,7 @@ def upsert(chat: str, raw: dict) -> str | None:
 		if existing:
 			frappe.delete_doc("Chat Message", existing, ignore_permissions=True, force=True)
 		return None
-	attachments = raw.get("attachments") or []
-	values = {
-		"sort_key": raw.get("sortKey"),
-		"sent_at": to_site_time(raw["timestamp"]),
-		"direction": "Out" if raw.get("isSender") else "In",
-		"sender_name": raw.get("senderName"),
-		"kind": KINDS.get(raw.get("type"), "Other"),
-		"text": raw.get("text"),
-		"media_url": attachments[0].get("srcURL") if attachments else None,
-		"attachments": json.dumps([from_beeper(a) for a in attachments]) if attachments else None,
-	}
+	values = values_from(raw)
 	if not existing:
 		try:
 			doc = frappe.get_doc(

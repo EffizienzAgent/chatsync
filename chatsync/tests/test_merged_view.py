@@ -146,3 +146,21 @@ class TestContactMessages(ChatsyncTestCase):
 
 	def test_get_contact_messages_is_get(self):
 		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[api.get_contact_messages], ["GET"])
+
+
+class TestBeeperType(ChatsyncTestCase):
+	def setUp(self):
+		super().setUp()
+		self.addCleanup(frappe.db.rollback)
+		self.chat = make_chat(make_account("Administrator"), make_contact())
+
+	def test_unsupported_kinds_keep_beeper_type(self):
+		from chatsync.messages import upsert
+		from chatsync.tests.test_sync import message
+
+		upsert(self.chat.name, message("c", 0, "", type="STICKER"))
+		upsert(self.chat.name, message("c", 0, "hi"))
+		rows = api.get_messages(self.chat.name)["messages"]
+		self.assertEqual(
+			sorted((m["kind"], m["beeper_type"]) for m in rows), [("Other", "STICKER"), ("Text", None)]
+		)

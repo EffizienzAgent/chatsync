@@ -8,8 +8,11 @@ from frappe.utils import now_datetime
 from chatsync import formatting, messages, networks, sync
 from chatsync.beeper import BeeperError
 from chatsync.matching import counterpart, match_chat, phone_contacts, phone_index
+from chatsync.phone import normalize
 
 UNASSIGNED_TIMEOUT = 5
+PHONE_NETWORKS = {"whatsapp", "signal"}
+PREVIEW_LIMIT = 100
 
 
 @contextmanager
@@ -157,12 +160,16 @@ def assign_chat(beeper_chat_id: str, contact: str) -> str:
 	account = session_account()
 	check_contact(contact)
 	raw, cp = direct_chat(sync.client_for(account), beeper_chat_id)
-	drop_rows(beeper_chat_id)
+	return assign(account, raw, cp, contact)
+
+
+def assign(account, raw: dict, cp, contact: str) -> str:
+	drop_rows(cp.beeper_chat_id)
 	add_row(
 		contact,
 		{
 			"network": cp.network,
-			"beeper_chat_id": beeper_chat_id,
+			"beeper_chat_id": cp.beeper_chat_id,
 			"identifier": cp.username or cp.participant_id,
 			"display_name": raw.get("title"),
 		},
@@ -222,12 +229,14 @@ def reassign_chat(chat: str, contact: str) -> str:
 
 
 SEND_COMMAND = "chatsync.api.send_message"
+START_COMMAND = "chatsync.api.start_chat"
 MESSAGE_FIELDS = [
 	"name",
 	"sent_at",
 	"direction",
 	"sender_name",
 	"kind",
+	"beeper_type",
 	"text",
 	"transcript",
 	"media_url",
@@ -368,13 +377,14 @@ def has_csrf_token() -> bool:
 	return bool(expected) and frappe.get_request_header("X-Frappe-CSRF-Token") == expected
 
 
-def check_browser_session() -> None:
+def check_browser_session(command: str = SEND_COMMAND) -> None:
+	"""The request must be the browser's own POST to `command`, so no other endpoint can call it."""
 	request = getattr(frappe.local, "request", None)
 	if (
 		request is None
 		or request.method != "POST"
 		or frappe.get_request_header("Authorization")
-		or frappe.form_dict.get("cmd") != SEND_COMMAND
+		or frappe.form_dict.get("cmd") != command
 		or not has_csrf_token()
 	):
 		frappe.throw(frappe._("Sending is only possible from the chat view."), frappe.PermissionError)
@@ -427,3 +437,81 @@ def refresh_messages(chat: str) -> dict:
 	check_chat(chat, write=True)
 	client, beeper_chat_id = chat_client(chat)
 	return {"messages": pull_latest(chat, client, beeper_chat_id)}
+
+
+def contact_phones(contact: str) -> list[str]:
+	region = frappe.db.get_single_value("Chat Sync Settings", "phone_region") or "DE"
+	phones = frappe.get_all(
+		"Contact Phone", filters={"parenttype": "Contact", "parent": contact}, pluck="phone", order_by="idx"
+	)
+	return list(dict.fromkeys(e164 for phone in phones if phone and (e164 := normalize(phone, region))))
+
+
+def phone_account(raw: dict) -> dict | None:
+	network = networks.key((raw.get("bridge") or {}).get("type") or raw.get("accountID"))
+	if network not in PHONE_NETWORKS or raw.get("status") == "disabled":
+		return None
+	user = raw.get("user") or {}
+	return {
+		"account_id": raw["accountID"],
+		"network": network,
+		"network_label": networks.label(network),
+		"name": user.get("fullName") or user.get("phoneNumber") or user.get("username"),
+		"phone": user.get("phoneNumber"),
+	}
+
+
+@frappe.whitelist(methods=["GET"])
+def chat_start_options(contact: str) -> dict:
+	"""The user's Beeper accounts that reach people by phone number, and the contact's numbers."""
+	account = session_account()
+	check_contact(contact)
+	accounts = beeper_call(sync.client_for(account).accounts)
+	return {
+		"accounts": [found for raw in accounts if (found := phone_account(raw))],
+		"phones": contact_phones(contact),
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def start_chat(contact: str, account_id: str, phone: str) -> str:
+	"""Opens a direct chat with one of the contact's numbers and assigns it; sends nothing."""
+	check_browser_session(START_COMMAND)
+	account = session_account()
+	check_contact(contact)
+	if phone not in contact_phones(contact):
+		frappe.throw(frappe._("{0} is not a phone number of this contact.").format(phone))
+	client = sync.client_for(account)
+	user = {"phoneNumber": phone, "fullName": contact_name(contact)}
+	try:
+		raw = client.start_chat(account_id, user)
+	except BeeperError as e:
+		frappe.throw(
+			frappe._(
+				"Beeper could not start the chat ({0}). Is the number registered on this network?"
+			).format(e.message or e.status)
+		)
+	cp = counterpart(raw)
+	if not cp:
+		raw, cp = direct_chat(client, raw["id"])
+	return assign(account, raw, cp, contact)
+
+
+@frappe.whitelist(methods=["GET"])
+def preview_chat(beeper_chat_id: str, limit: int = 20) -> dict:
+	"""The newest messages of an unassigned direct chat, fetched live; nothing is stored."""
+	account = session_account()
+	limit = max(1, min(int(limit), PREVIEW_LIMIT))
+	if frappe.db.exists("Chat", {"account": account.name, "beeper_chat_id": beeper_chat_id}):
+		frappe.throw(frappe._("This chat is already assigned, open it in the chat view."))
+	client = sync.client_for(account)
+	raw, cp = direct_chat(client, beeper_chat_id)
+	items, _cursor = beeper_call(client.messages, beeper_chat_id)
+	shown = sorted(filter(messages.is_shown, items), key=lambda m: messages.sort_order(m.get("sortKey")))
+	return {
+		"beeper_chat_id": beeper_chat_id,
+		"title": raw.get("title"),
+		"network": cp.network,
+		"network_label": networks.label(cp.network),
+		"messages": [messages.preview(m) for m in shown[-limit:]],
+	}

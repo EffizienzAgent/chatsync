@@ -50,6 +50,16 @@ class BeeperClient:
 		path = f"/v1/chats/{quote(chat_id, safe='')}/messages"
 		return self._request("POST", path, json={"text": text}).json()
 
+	def accounts(self) -> list[dict]:
+		return self._get("/v1/accounts").json()
+
+	def start_chat(self, account_id: str, user: dict) -> dict:
+		"""Opens (or reuses) a direct chat without sending anything; returns the chat."""
+		payload = {"accountID": account_id, "user": user, "allowInvite": False}
+		chat = self._request("POST", "/v1/chats/start", json=payload).json()
+		chat.setdefault("id", chat.get("chatID"))
+		return chat
+
 	def asset(self, url: str, limit: int | None = None) -> tuple[bytes, str]:
 		response = self._asset_response(url)
 		content_type = response.headers.get("Content-Type")

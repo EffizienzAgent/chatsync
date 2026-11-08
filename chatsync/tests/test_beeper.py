@@ -74,6 +74,24 @@ class TestBeeperClient(IntegrationTestCase):
 		self.assertEqual(kw["json"], {"text": "Hallo"})
 		self.assertEqual(result["pendingMessageID"], "7")
 
+	def test_accounts(self):
+		with self.serve(FakeResponse([{"accountID": "whatsapp"}])):
+			self.assertEqual(self.client.accounts(), [{"accountID": "whatsapp"}])
+		self.assertEqual(self.calls[0][:2], ("GET", f"{BASE}/v1/accounts"))
+
+	def test_start_chat_sends_no_message_and_no_invite(self):
+		user = {"phoneNumber": "+491511234567", "fullName": "Max"}
+		with self.serve(FakeResponse({"id": CHAT_ID, "chatID": CHAT_ID})):
+			result = self.client.start_chat("whatsapp", user)
+		method, url, kw = self.calls[0]
+		self.assertEqual((method, url), ("POST", f"{BASE}/v1/chats/start"))
+		self.assertEqual(kw["json"], {"accountID": "whatsapp", "user": user, "allowInvite": False})
+		self.assertEqual(result["id"], CHAT_ID)
+
+	def test_start_chat_takes_legacy_chat_id(self):
+		with self.serve(FakeResponse({"chatID": CHAT_ID})):
+			self.assertEqual(self.client.start_chat("whatsapp", {"phoneNumber": "+49"})["id"], CHAT_ID)
+
 	def test_pagination_cursor(self):
 		first = {"items": [1], "hasMore": True, "oldestCursor": "old", "newestCursor": "new"}
 		last = {"items": [2], "hasMore": False, "oldestCursor": "older", "newestCursor": "new2"}

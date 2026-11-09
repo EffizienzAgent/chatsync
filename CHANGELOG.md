@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/EffizienzAgent/chatsync/compare/v0.3.0...v0.3.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* dedupe merged members, keep the sync mark on member failures ([4aa9f0c](https://github.com/EffizienzAgent/chatsync/commit/4aa9f0c76a8efd2c27ca0480102bceacbe83adac))
+* read Beeper merged chats as their member chats ([eaa2b2c](https://github.com/EffizienzAgent/chatsync/commit/eaa2b2ccc746eebf64975a7b6dbbb325b6c040ec))
+
 ## [0.3.0](https://github.com/EffizienzAgent/chatsync/compare/v0.2.0...v0.3.0) (2026-11-08)
 
 

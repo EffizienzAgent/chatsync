@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 import frappe
-from frappe.utils import get_datetime
+from frappe.utils import add_to_date, get_datetime, now_datetime
 
 from chatsync import api, sync
 from chatsync.messages import to_site_time
@@ -99,22 +99,61 @@ class TestChatState(OpenChatsCase):
 		sync.sync_account(self.account.name)
 		self.assertEqual(self.stored(member).beeper_archived, 1)
 
-	def test_open_chat_outside_the_window_is_refreshed_from_beeper(self):
+	def checked_minutes_ago(self, raw, minutes):
+		frappe.db.set_value(
+			"Chat",
+			{"beeper_chat_id": raw["id"]},
+			"beeper_state_checked_at",
+			add_to_date(now_datetime(), minutes=-minutes),
+		)
+
+	def test_open_chat_outside_the_window_is_refreshed_at_most_every_ten_minutes(self):
 		phone = number()
 		make_contact(phones=[phone])
 		member = {**chat_json(phone), "isArchived": False}
 		fake = self.use(ArchivingBeeper([member], {member["id"]: [[message(member["id"], 0)]]}))
 		sync.sync_account(self.account.name)
+		fake.chats = lambda cursor=None: ([], None)
+		fake.fetched.clear()
+		sync.sync_account(self.account.name)
+		self.assertEqual(fake.fetched, [])
+		self.checked_minutes_ago(member, sync.STATE_CHECK_MINUTES + 1)
 		parent = {**chat_json(), "merge": {"chatIDs": [member["id"]]}, "isArchived": True}
 		member["mergedIntoChatID"] = parent["id"]
 		fake.chat_items.append(parent)
-		fake.chats = lambda cursor=None: ([], None)
-		fake.fetched.clear()
 		sync.sync_account(self.account.name)
 		self.assertEqual(self.stored(member).beeper_archived, 1)
 		self.assertEqual(fake.fetched, [member["id"], parent["id"]])
 		fake.fetched.clear()
 		sync.sync_account(self.account.name)
+		self.assertEqual(fake.fetched, [])
+
+	def test_state_comes_from_the_listed_pages_without_extra_calls(self):
+		phone, other = number(), number("16")
+		make_contact(phones=[phone])
+		make_contact(phones=[other])
+		single = {**chat_json(phone), "isArchived": False}
+		member = {**chat_json(other), "isArchived": False}
+		fake = self.use(ArchivingBeeper([single, member], {}))
+		sync.sync_account(self.account.name)
+		for raw in (single, member):
+			self.checked_minutes_ago(raw, 60)
+		old = {**single, "isArchived": True, "unreadCount": 4, "lastActivity": "2020-01-01T00:00:00.000Z"}
+		parent = {
+			**chat_json(),
+			"merge": {"chatIDs": [member["id"]]},
+			"isArchived": True,
+			"lastActivity": "2020-01-01T00:00:00.000Z",
+		}
+		fake.chats = lambda cursor=None: ([old, parent], None)
+		fake.fetched.clear()
+		sync.sync_account(self.account.name)
+		self.assertEqual(fake.fetched, [])
+		self.assertEqual((self.stored(single).beeper_archived, self.stored(single).unread_count), (1, 4))
+		self.assertEqual(self.stored(member).beeper_archived, 1)
+		fake.chats = lambda cursor=None: ([{**old, "isArchived": False}], None)
+		sync.sync_account(self.account.name)
+		self.assertEqual(self.stored(single).beeper_archived, 0)
 		self.assertEqual(fake.fetched, [])
 
 

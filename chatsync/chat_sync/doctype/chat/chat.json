@@ -24,7 +24,8 @@
   "beeper_archived",
   "unread_count",
   "last_incoming_at",
-  "last_outgoing_at"
+  "last_outgoing_at",
+  "beeper_state_checked_at"
  ],
  "fields": [
   {
@@ -135,6 +136,14 @@
    "fieldtype": "Datetime",
    "label": "Last Outgoing At",
    "read_only": 1
+  },
+  {
+   "fieldname": "beeper_state_checked_at",
+   "fieldtype": "Datetime",
+   "label": "Beeper State Checked At",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1
   }
  ],
  "autoname": "hash",

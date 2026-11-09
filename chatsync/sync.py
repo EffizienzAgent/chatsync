@@ -5,10 +5,11 @@ from frappe.utils import get_datetime, now_datetime
 
 from chatsync.beeper import BeeperAuthError, BeeperClient, BeeperError
 from chatsync.matching import counterpart, match_chat, phone_index
-from chatsync.merges import archived, expand, failures
+from chatsync.merges import archived, expand, failures, listed_states
 from chatsync.messages import sort_order, to_site_time, upsert
 
 EDIT_WINDOW_DAYS = 2
+STATE_CHECK_MINUTES = 10
 
 
 def client_for(account, timeout: int | None = None) -> BeeperClient:
@@ -83,8 +84,9 @@ def sync_account(account: str) -> None:
 		index = phone_index()
 		failed: list[tuple[str, str, str]] = []
 		members: dict = {}
+		listed: dict = {}
 		seen: set[str] = set()
-		for raw in walk_members(client, threshold, members):
+		for raw in walk_members(client, threshold, members, listed):
 			cp = counterpart(raw)
 			if not cp:
 				continue
@@ -94,7 +96,7 @@ def sync_account(account: str) -> None:
 			try:
 				chat = ensure_chat(doc, raw, cp, found.contact)
 				sync_chat(client, chat, started, days)
-				store_state(chat, raw, archived(client, raw, members))
+				store_state(chat, archived(client, raw, members), raw.get("unreadCount") or 0)
 				seen.add(chat)
 			except BeeperAuthError:
 				raise
@@ -104,7 +106,7 @@ def sync_account(account: str) -> None:
 				continue
 			kept(chat)
 		failed += [(chat_id, str(e), "") for chat_id, e in failures(members)]
-		refresh_open_chats(client, account, seen, members)
+		refresh_unwalked(client, account, seen, members, listed)
 		queue_incomplete_histories(account)
 	except BeeperError as e:
 		fail(account, e)
@@ -124,31 +126,39 @@ def sync_account(account: str) -> None:
 	commit()
 
 
-def store_state(chat: str, raw: dict, is_archived: bool) -> None:
-	frappe.db.set_value(
+def store_state(chat: str, is_archived: bool, unread_count: int | None = None) -> None:
+	values = {"beeper_archived": int(is_archived), "beeper_state_checked_at": now_datetime()}
+	if unread_count is not None:
+		values["unread_count"] = unread_count
+	frappe.db.set_value("Chat", chat, values, update_modified=False)
+
+
+def refresh_unwalked(client: BeeperClient, account: str, seen: set[str], cache: dict, listed: dict) -> None:
+	"""Chats can be archived in Beeper without new activity. Stored chats the walk did not sync take their
+	state from the chat list pages already fetched; open ones not listed there are asked for, each at most
+	every STATE_CHECK_MINUTES."""
+	stale = now_datetime() - timedelta(minutes=STATE_CHECK_MINUTES)
+	rows = frappe.get_all(
 		"Chat",
-		chat,
-		{"beeper_archived": int(is_archived), "unread_count": raw.get("unreadCount") or 0},
-		update_modified=False,
+		filters={"account": account, "name": ["not in", list(seen) or [""]]},
+		or_filters={"beeper_archived": 0, "beeper_chat_id": ["in", list(listed) or [""]]},
+		fields=["name", "beeper_chat_id", "beeper_state_checked_at"],
 	)
-
-
-def refresh_open_chats(client: BeeperClient, account: str, seen: set[str], cache: dict) -> None:
-	"""Chats can be archived in Beeper without new activity: open chats the walk missed are asked for."""
-	for chat, beeper_chat_id in frappe.get_all(
-		"Chat",
-		filters={"account": account, "beeper_archived": 0, "name": ["not in", list(seen) or [""]]},
-		fields=["name", "beeper_chat_id"],
-		as_list=True,
-	):
+	for row in rows:
+		if row.beeper_chat_id in listed:
+			state = listed[row.beeper_chat_id]
+			store_state(row.name, state["archived"], state["unread_count"])
+			continue
+		if row.beeper_state_checked_at and get_datetime(row.beeper_state_checked_at) > stale:
+			continue
 		try:
-			raw = client.chat(beeper_chat_id)
+			raw = client.chat(row.beeper_chat_id)
 		except BeeperAuthError:
 			raise
 		except BeeperError as e:
-			frappe.logger("chatsync").warning(f"State of chat {beeper_chat_id} could not be loaded: {e}")
+			frappe.logger("chatsync").warning(f"State of chat {row.beeper_chat_id} could not be loaded: {e}")
 			continue
-		store_state(chat, raw, archived(client, raw, cache))
+		store_state(row.name, archived(client, raw, cache), raw.get("unreadCount") or 0)
 	commit()
 
 
@@ -159,10 +169,14 @@ def queue_incomplete_histories(account: str) -> None:
 		enqueue("chatsync.sync.import_history", f"chatsync-history-{chat}", chat=chat)
 
 
-def walk_chats(client: BeeperClient, threshold: datetime):
+def walk_chats(client: BeeperClient, threshold: datetime, listed: dict | None = None):
+	"""Chats active since `threshold`, newest first. `listed` collects the state of every chat on the
+	fetched pages, including those past the threshold."""
 	cursor = None
 	while True:
 		items, cursor = client.chats(cursor)
+		if listed is not None:
+			listed.update(listed_states(items))
 		for raw in items:
 			activity = raw.get("lastActivity")
 			if activity and to_site_time(activity) < threshold:
@@ -172,11 +186,13 @@ def walk_chats(client: BeeperClient, threshold: datetime):
 			return
 
 
-def walk_members(client: BeeperClient, threshold: datetime, cache: dict | None = None):
+def walk_members(
+	client: BeeperClient, threshold: datetime, cache: dict | None = None, listed: dict | None = None
+):
 	"""Like walk_chats, with merged chats replaced by their members active since `threshold`."""
 	cache = {} if cache is None else cache
 	seen: set[str] = set()
-	for raw in walk_chats(client, threshold):
+	for raw in walk_chats(client, threshold, listed):
 		for chat in expand(client, raw, cache):
 			activity = chat.get("lastActivity")
 			if chat["id"] in seen or (activity and to_site_time(activity) < threshold):

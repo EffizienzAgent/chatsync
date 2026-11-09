@@ -28,7 +28,9 @@ networks Beeper bridges end up in one place.
   in sync both ways. *Done* in the conversation header archives the chat in Beeper (all open chats
   of the contact), *Reopen* moves the chat chosen for replies back to the Beeper inbox; both take
   effect in Beeper at once. Archiving or unarchiving in Beeper shows up with the next sync (every
-  two minutes; chats without new activity are asked for one by one while they are open). A chat
+  two minutes). Chats without new activity take their state from the chat list pages the sync
+  reads anyway; open chats not on those pages are asked for one by one, each at most every ten
+  minutes. A chat
   that is part of a merged Beeper chat counts as archived with the merged chat, and *Done* archives
   the merged chat, since that is what Beeper's inbox shows. Each chat also keeps its unread count
   and when the last message came in and went out, so apps can show chats waiting for a reply

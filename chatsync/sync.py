@@ -5,6 +5,7 @@ from frappe.utils import get_datetime, now_datetime
 
 from chatsync.beeper import BeeperAuthError, BeeperClient, BeeperError
 from chatsync.matching import counterpart, match_chat, phone_index
+from chatsync.merges import expand
 from chatsync.messages import sort_order, to_site_time, upsert
 
 EDIT_WINDOW_DAYS = 2
@@ -81,7 +82,7 @@ def sync_account(account: str) -> None:
 		client = client_for(doc)
 		index = phone_index()
 		failed: list[tuple[str, str, str]] = []
-		for raw in walk_chats(client, threshold):
+		for raw in walk_members(client, threshold):
 			cp = counterpart(raw)
 			if not cp:
 				continue
@@ -135,6 +136,16 @@ def walk_chats(client: BeeperClient, threshold: datetime):
 			yield raw
 		if not cursor or not items:
 			return
+
+
+def walk_members(client: BeeperClient, threshold: datetime, cache: dict | None = None):
+	"""Like walk_chats, with merged chats replaced by their members active since `threshold`."""
+	cache = {} if cache is None else cache
+	for raw in walk_chats(client, threshold):
+		for chat in expand(client, raw, cache):
+			activity = chat.get("lastActivity")
+			if not (activity and to_site_time(activity) < threshold):
+				yield chat
 
 
 def ensure_chat(account, raw: dict, cp, contact: str) -> str:
@@ -257,10 +268,12 @@ def rematch_contact(contact: str) -> None:
 
 
 def all_chats(client: BeeperClient):
+	cache: dict = {}
 	cursor = None
 	while True:
 		items, cursor = client.chats(cursor)
-		yield from items
+		for raw in items:
+			yield from expand(client, raw, cache)
 		if not cursor or not items:
 			return
 

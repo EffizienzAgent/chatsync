@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import frappe
 
 from chatsync.extensions import contact_filter
+from chatsync.merges import is_merged
 from chatsync.phone import normalize
 
 
@@ -26,7 +27,7 @@ class Match:
 def counterpart(chat: dict) -> Counterpart | None:
 	if chat.get("type") != "single":
 		return None
-	if chat.get("network") == "matrix" and "merge" in chat:
+	if is_merged(chat):
 		return None
 	participants = chat.get("participants") or []
 	if isinstance(participants, dict):

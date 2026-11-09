@@ -8,6 +8,7 @@ from frappe.utils import escape_html, now_datetime
 from chatsync import formatting, messages, networks, sync
 from chatsync.beeper import BeeperError
 from chatsync.matching import counterpart, match_chat, phone_contacts, phone_index
+from chatsync.merges import expand, is_merged
 from chatsync.phone import normalize
 
 UNASSIGNED_TIMEOUT = 5
@@ -40,6 +41,8 @@ def beeper_call(function, *args):
 
 def direct_chat(client, beeper_chat_id: str):
 	raw = beeper_call(client.chat, beeper_chat_id)
+	if is_merged(raw):
+		frappe.throw(frappe._("This is a merged Beeper chat, pick one of its chats instead."))
 	cp = counterpart(raw)
 	if not cp:
 		frappe.throw(frappe._("Only direct chats can be assigned"))
@@ -98,11 +101,13 @@ def add_row(contact: str, values: dict) -> None:
 @frappe.whitelist()
 def search_chats(query: str) -> list[dict]:
 	client = sync.client_for(session_account())
-	result = []
-	for raw in beeper_call(client.search_chats, query):
-		if cp := counterpart(raw):
-			result.append(summary(raw, cp))
-	return result
+	cache: dict = {}
+	result = {}
+	for found in beeper_call(client.search_chats, query):
+		for raw in beeper_call(expand, client, found, cache):
+			if cp := counterpart(raw):
+				result.setdefault(cp.beeper_chat_id, summary(raw, cp))
+	return list(result.values())
 
 
 def find_unassigned_chats(user: str | None = None, days: int = 14) -> list[dict]:
@@ -116,7 +121,7 @@ def find_unassigned_chats(user: str | None = None, days: int = 14) -> list[dict]
 	index = phone_index()
 	ignored = ignored_chats(account.user)
 	result = []
-	for raw in sync.walk_chats(client, threshold):
+	for raw in sync.walk_members(client, threshold):
 		cp = counterpart(raw)
 		if not cp or cp.beeper_chat_id in ignored:
 			continue

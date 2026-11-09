@@ -11,7 +11,10 @@ networks Beeper bridges end up in one place.
 
 - **One account per user.** Each user adds a **Chat Account** with the Beeper Server's base URL and
   a token. Chats and messages are visible only to their owner (see Privacy).
-- **Direct chats only.** Group chats are ignored.
+- **Direct chats only.** Group chats are ignored. A chat merged in Beeper (one person across
+  several networks) is read as its member chats: each member is matched, stored and assigned on its
+  own, with its own network, so a merged Signal + Telegram chat can yield one matched Signal chat
+  and one unassigned Telegram chat. The merged chat itself is never stored.
 - **Matching.** A direct chat whose counterpart exposes a phone number (typically WhatsApp and
   Signal) is matched to a contact by that number; all other chats are assigned by hand ("Assign
   chat" on the Contact). Chats without a matching contact are never stored.

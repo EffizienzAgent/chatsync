@@ -94,3 +94,4 @@ Beeper Type,Beeper-Typ,
 Chat,Chat,Contact action
 Only possible in a browser session.,Nur in einer Browser-Sitzung möglich.,
 This chat already belongs to another contact ({0}).,Dieser Chat gehört bereits zu einem anderen Kontakt ({0}).,
+"This is a merged Beeper chat, pick one of its chats instead.","Das ist ein in Beeper zusammengeführter Chat, bitte einen seiner Chats auswählen.",

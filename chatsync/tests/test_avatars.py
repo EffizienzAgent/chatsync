@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 import frappe
 
 from chatsync import api, media, sync
-from chatsync.beeper import AssetTooLarge
+from chatsync.beeper import AssetTooLarge, BeeperError
 from chatsync.tests.helpers import ChatsyncTestCase
 from chatsync.tests.test_inbox_unassigned import PagedBeeper, number
 from chatsync.tests.test_matching import make_contact
@@ -33,7 +33,13 @@ class AvatarCase(ChatsyncTestCase):
 		self.raw = with_picture(chat_json(number()))
 		self.fake = AssetBeeper([self.raw], {})
 		self.fake.assets[FACE] = (PNG, "application/octet-stream")
-		patcher = patch.object(sync, "BeeperClient", lambda *a, **k: self.fake)
+		self.timeouts = []
+
+		def client(*args, **kwargs):
+			self.timeouts.append(kwargs.get("timeout"))
+			return self.fake
+
+		patcher = patch.object(sync, "BeeperClient", client)
 		patcher.start()
 		self.addCleanup(patcher.stop)
 		self.contact = make_contact()
@@ -59,10 +65,10 @@ class AvatarCase(ChatsyncTestCase):
 
 
 class TestAvatarEndpoint(AvatarCase):
-	def assert_no_picture(self, response):
+	def assert_no_picture(self, response, cache="private, max-age=86400"):
 		self.assertEqual(response.status_code, 204)
 		self.assertEqual(response.data, b"")
-		self.assertEqual(response.headers["Cache-Control"], "private, max-age=86400")
+		self.assertEqual(response.headers["Cache-Control"], cache)
 
 	def test_streams_counterpart_picture_without_storing(self):
 		files, disk = frappe.db.count("File"), files_on_disk()
@@ -72,6 +78,7 @@ class TestAvatarEndpoint(AvatarCase):
 		self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
 		self.assertEqual(self.fake.requested, [FACE])
 		self.assertEqual(self.fake.limits, [2 * 1024 * 1024])
+		self.assertEqual(self.timeouts, [api.UNASSIGNED_TIMEOUT])
 		self.assertEqual((frappe.db.count("File"), files_on_disk()), (files, disk))
 
 	def test_falls_back_to_chat_picture(self):
@@ -95,10 +102,16 @@ class TestAvatarEndpoint(AvatarCase):
 		self.assert_no_picture(media.avatar(chat=self.chat))
 		self.assertEqual(self.fake.requested, [])
 
-	def test_size_cap(self):
+	def test_too_large_is_no_picture(self):
 		self.fake.error = AssetTooLarge(media.AVATAR_MAX_BYTES)
-		with self.assertRaises(media.FileTooLarge):
-			media.avatar(chat=self.chat)
+		self.assert_no_picture(media.avatar(chat=self.chat))
+
+	def test_beeper_error_is_no_picture_for_a_while(self):
+		files = frappe.db.count("File")
+		for error in (BeeperError(0, "ConnectTimeout"), BeeperError(404, "gone")):
+			self.fake.error = error
+			self.assert_no_picture(media.avatar(chat=self.chat), "private, max-age=300")
+		self.assertEqual(frappe.db.count("File"), files)
 
 	def test_owner_only(self):
 		for user in (make_user("avatar-other", ["Chat User"]), "Administrator"):
@@ -159,6 +172,21 @@ class TestAvatarUrls(AvatarCase):
 		expected = self.endpoint(chat=newer)
 		self.assertEqual(api.get_contact_messages(self.contact)["avatar_url"], expected)
 		self.assertEqual(api.get_conversations()[0]["avatar_url"], expected)
+
+	def test_same_newest_chat_without_message_times(self):
+		frappe.get_doc(
+			{
+				"doctype": "Chat",
+				"account": self.account.name,
+				"user": self.user,
+				"beeper_chat_id": "!second:beeper.local",
+				"network": "signal",
+				"contact": self.contact,
+			}
+		).insert(ignore_permissions=True)
+		self.assertEqual(
+			api.get_contact_messages(self.contact)["avatar_url"], api.get_conversations()[0]["avatar_url"]
+		)
 
 	def test_unassigned_items_and_preview(self):
 		frappe.db.delete("Chat", {"name": self.chat})

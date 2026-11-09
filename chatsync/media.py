@@ -16,6 +16,7 @@ RANGE = re.compile(r"bytes=(\d*)-(\d*)")
 DOWNLOAD = "application/octet-stream"
 AVATAR_MAX_BYTES = 2 * 1024 * 1024
 AVATAR_CACHE = "private, max-age=86400"
+AVATAR_RETRY = "private, max-age=300"
 VIDEO_TYPES = {"video/mp4", "video/webm"}
 IMAGE_SIGNATURES = (
 	(b"\xff\xd8\xff", "image/jpeg"),
@@ -185,21 +186,32 @@ def serve(message: str, index: int = 0) -> Response:
 def avatar(chat: str | None = None, beeper_chat_id: str | None = None) -> Response:
 	"""The Beeper picture of the person in one of the caller's chats, streamed and never stored.
 
-	Without a usable picture the answer is an empty 204, cached like a picture, so the browser
-	shows the initials and does not ask again for a day.
+	Without a usable picture the answer is an empty 204, cached like a picture (briefly when Beeper
+	failed), so the browser shows the initials and does not keep asking.
 	"""
 	if chat:
 		api.check_chat(chat, write=True)
-		client, beeper_chat_id = api.chat_client(chat)
+		beeper_chat_id, account = frappe.db.get_value("Chat", chat, ["beeper_chat_id", "account"])
+		account = frappe.get_doc("Chat Account", account)
 	elif beeper_chat_id:
-		client = sync.client_for(api.session_account())
+		account = api.session_account()
 	else:
 		frappe.throw(frappe._("No chat given."))
-	source = api.avatar_source(fetch(client.chat, beeper_chat_id))
-	data = fetch(client.asset, source, AVATAR_MAX_BYTES)[0] if source else b""
+	client = sync.client_for(account, timeout=api.UNASSIGNED_TIMEOUT)
+	try:
+		source = api.avatar_source(client.chat(beeper_chat_id))
+		data = client.asset(source, AVATAR_MAX_BYTES)[0] if source else b""
+	except AssetTooLarge:
+		return no_picture(AVATAR_CACHE)
+	except BeeperError:
+		return no_picture(AVATAR_RETRY)
 	if content_type := sniff_image(data):
 		return respond(data, content_type, disposition("inline", "avatar"), AVATAR_CACHE)
+	return no_picture(AVATAR_CACHE)
+
+
+def no_picture(cache: str) -> Response:
 	response = Response(status=204)
-	response.headers["Cache-Control"] = AVATAR_CACHE
+	response.headers["Cache-Control"] = cache
 	response.headers["X-Content-Type-Options"] = "nosniff"
 	return response

@@ -86,6 +86,13 @@ def avatar_endpoint(**args) -> str:
 	return f"{AVATAR_ENDPOINT}?{urlencode(args)}"
 
 
+def newest_chat(chats: list[dict]) -> str | None:
+	"""The chat whose Beeper picture stands for the contact: the same one in every view."""
+	if not chats:
+		return None
+	return max(chats, key=lambda c: (str(c["last_message_at"] or ""), str(c["creation"]), c["name"]))["name"]
+
+
 def avatar_url(contact: str | None, chat: str | None, image: str | None = None) -> str | None:
 	"""The contact's own picture first, else the Beeper picture of `chat`, streamed on request."""
 	if contact and not image:
@@ -402,7 +409,7 @@ def own_chats(contact: str) -> list[dict]:
 	chats = frappe.get_list(
 		"Chat",
 		filters={"contact": contact, "user": frappe.session.user},
-		fields=["name", "network", "title", "last_message_at"],
+		fields=["name", "network", "title", "last_message_at", "creation"],
 		order_by="last_message_at desc, creation desc",
 	)
 	if not chats:
@@ -423,6 +430,7 @@ def own_chats(contact: str) -> list[dict]:
 			"title": c.title,
 			"last_message_at": c.last_message_at,
 			"last_incoming_at": incoming.get(c.name),
+			"creation": c.creation,
 		}
 		for c in chats
 	]
@@ -451,7 +459,7 @@ def get_contact_messages(contact: str, before: str | None = None, limit: int = 2
 	return {
 		"contact": contact,
 		"contact_name": contact_name(contact),
-		"avatar_url": avatar_url(contact, chats[0]["name"] if chats else None),
+		"avatar_url": avatar_url(contact, newest_chat(chats)),
 		"chats": chats,
 		"default_chat": default_chat(chats),
 		"messages": result,
@@ -484,7 +492,7 @@ def check_browser_session(command: str = SEND_COMMAND, message: str | None = Non
 		or not has_csrf_token()
 	):
 		frappe.throw(
-			message or frappe._("Sending is only possible from the chat view."), frappe.PermissionError
+			message or frappe._("Sending is only possible from the chat window."), frappe.PermissionError
 		)
 
 
@@ -650,7 +658,7 @@ def get_conversations() -> list[dict]:
 	chats = frappe.get_list(
 		"Chat",
 		filters={"user": frappe.session.user},
-		fields=["name", "network", "title", "contact", "last_message_at"],
+		fields=["name", "network", "title", "contact", "last_message_at", "creation"],
 		limit_page_length=0,
 	)
 	groups: dict[str, list] = {}
@@ -671,7 +679,6 @@ def get_conversations() -> list[dict]:
 		)
 		last = last[0] if last else {}
 		contact = members[0].contact
-		newest = max(members, key=lambda c: str(c.last_message_at or ""))
 		rows.append(
 			{
 				"key": key,
@@ -683,7 +690,7 @@ def get_conversations() -> list[dict]:
 				or max((c.last_message_at for c in members if c.last_message_at), default=None),
 				"direction": last.get("direction"),
 				"preview": messages.summary_text(last) if last else "",
-				"avatar_url": avatar_url(None, newest.name, images.get(contact)),
+				"avatar_url": avatar_url(None, newest_chat(members), images.get(contact)),
 			}
 		)
 	return sorted(rows, key=lambda r: str(r["last_message_at"] or ""), reverse=True)

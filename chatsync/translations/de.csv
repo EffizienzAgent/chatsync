@@ -16,7 +16,7 @@ Archive,Ins Archiv,Chat View
 Reassign,Zuordnen,Chat View
 Reply,Antworten,Chat View
 Loading older messages...,Ältere Nachrichten werden geladen...
-Sending is only possible from the chat view.,Senden ist nur in der Chat-Ansicht möglich.
+Sending is only possible from the chat window.,Senden ist nur aus dem Chatfenster möglich.
 The message is empty.,Die Nachricht ist leer.
 Voice,Sprachnachricht,Chat View
 Image,Bild,Chat View
@@ -80,7 +80,7 @@ No messages yet,Noch keine Nachrichten,Chat View
 Start chat,Chat starten,
 Account,Konto,
 Phone,Telefon,
-Nothing is sent until you write the first message.,Es wird nichts gesendet – erst deine erste Nachricht.,
+Nothing is sent until you write the first message.,"Es wird erst etwas gesendet, wenn du die erste Nachricht schreibst.",
 "This contact has no phone number. Add one, or assign an existing chat.","Dieser Kontakt hat keine Telefonnummer. Füge eine hinzu oder ordne einen vorhandenen Chat zu.",
 No WhatsApp or Signal account is connected in Beeper.,In Beeper ist kein WhatsApp- oder Signal-Konto verbunden.,
 Voice message,Sprachnachricht,

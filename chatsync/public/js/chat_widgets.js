@@ -50,6 +50,10 @@ function unsupported_label(type) {
 	return __("Unsupported message type", null, CONTEXT) + (name ? ` (${name})` : "");
 }
 
+function compare(a, b) {
+	return a.sent_at.localeCompare(b.sent_at) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+}
+
 function now_time() {
 	return moment().format("HH:mm");
 }
@@ -272,21 +276,29 @@ class ChatPane {
 	merge(incoming, chat) {
 		const info = this.chats.find((c) => c.name === chat) || {};
 		const known = new Set(this.messages.map((m) => m.name));
+		const oldest = this.has_more ? this.messages[0] : null;
 		const added = incoming
-			.filter((m) => !known.has(m.name))
+			.filter((m) => !known.has(m.name) && !(oldest && compare(m, oldest) < 0))
 			.map((m) => ({ ...m, chat, network: info.network, network_label: info.network_label }));
-		this.messages = this.messages
-			.concat(added)
-			.sort((a, b) => a.sent_at.localeCompare(b.sent_at) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+		this.messages = this.messages.concat(added).sort(compare);
 		this.settle(added);
 		this.render();
 		return added;
 	}
 
+	newest_known(chat) {
+		const own = this.messages.filter((m) => m.chat === chat);
+		return own.length ? own[own.length - 1] : this.has_more ? this.messages[0] : null;
+	}
+
 	settle(added) {
-		for (const message of added) {
-			const entry = this.pending.find((p) => p.chat === message.chat && message.direction === "Out" && p.text === message.text);
-			if (!entry) continue;
+		const candidates = added.filter((m) => m.direction === "Out").sort(compare).reverse();
+		for (const entry of [...this.pending]) {
+			const message = candidates.find(
+				(m) => m.chat === entry.chat && m.text === entry.text && (!entry.after || compare(m, entry.after) > 0)
+			);
+			if (!message) continue;
+			candidates.splice(candidates.indexOf(message), 1);
 			this.pending = this.pending.filter((p) => p !== entry);
 			this.confirmed.add(message.name);
 		}
@@ -319,7 +331,12 @@ class ChatPane {
 			if (ticket !== this.ticket || !this.pending.includes(entry)) return;
 			let r;
 			try {
-				r = await frappe.call({ method: "chatsync.api.refresh_messages", type: "POST", args: { chat: entry.chat } });
+				r = await frappe.call({
+					method: "chatsync.api.refresh_messages",
+					type: "POST",
+					silent: true,
+					args: { chat: entry.chat },
+				});
 			} catch (e) {
 				return this.give_up(entry, ticket);
 			}
@@ -351,7 +368,7 @@ class ChatPane {
 		const chat = this.chat;
 		if (!text || this.sending || !chat) return;
 		const ticket = this.ticket;
-		const entry = { chat, text, time: now_time() };
+		const entry = { chat, text, time: now_time(), after: this.newest_known(chat) };
 		this.sending = true;
 		this.pending.push(entry);
 		this.$input.val("");
@@ -420,6 +437,7 @@ class QuickReply extends ChatPane {
 			this.ticket++;
 			this.clear_pending();
 		};
+		this.dialog.$wrapper.on("hidden.bs.modal", () => this.dialog.$wrapper.remove());
 		this.dialog.show();
 		this.load(select);
 	}
@@ -438,6 +456,7 @@ class QuickReply extends ChatPane {
 				this.chat = data.chats.some((c) => c.name === select) ? select : data.default_chat;
 				this.title = data.contact_name || this.contact;
 				this.messages = data.messages;
+				this.has_more = data.has_more;
 				this.$avatar.empty().append(avatar(this.title, data.avatar_url));
 				this.$title.text(this.title);
 				const $subtitle = this.$subtitle.empty();

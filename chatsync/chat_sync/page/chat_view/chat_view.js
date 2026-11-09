@@ -372,9 +372,7 @@ class ChatView extends chatsync.ui.ChatPane {
 		this.$more = $(`<div class="chat-more"></div>`).appendTo(this.$scroll);
 		this.$list = $(`<div class="chat-messages"></div>`).appendTo(this.$scroll);
 		this.$scroll.on("scroll", () => {
-			const scroll = this.$scroll[0];
-			this.at_bottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
-			if (scroll.scrollTop < 40) this.load_older();
+			if (this.user_scrolled() && this.$scroll[0].scrollTop < 40) this.load_older();
 		});
 		this.make_composer(this.$conversation);
 	}
@@ -686,11 +684,9 @@ class ChatView extends chatsync.ui.ChatPane {
 					})
 				: await frappe.call({ method: "chatsync.api.get_messages", args: { chat: this.chat, before } });
 		if (ticket !== this.ticket) return false;
-		const height = this.$scroll[0].scrollHeight;
 		this.messages = r.message.messages.concat(this.messages);
 		this.has_more = r.message.has_more;
 		this.render();
-		this.$scroll.scrollTop(this.$scroll[0].scrollHeight - height);
 		return true;
 	}
 

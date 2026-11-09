@@ -345,6 +345,38 @@ class ChatPane {
 	}
 
 	render() {
+		const scroll = this.$scroll[0];
+		const was_bottom = this.at_bottom;
+		const anchor = was_bottom ? null : this.scroll_anchor();
+		this.rebuild();
+		const target = anchor && this.$list.find(`.chat-row[data-name="${CSS.escape(anchor.name)}"]`)[0];
+		if (target) {
+			const shift = target.getBoundingClientRect().top - scroll.getBoundingClientRect().top - anchor.offset;
+			scroll.scrollTop += shift;
+		}
+		else if (was_bottom) scroll.scrollTop = scroll.scrollHeight;
+		this.at_bottom = was_bottom;
+		this.rendered_top = scroll.scrollTop;
+		requestAnimationFrame(() => requestAnimationFrame(() => (this.rendered_top = null)));
+	}
+
+	scroll_anchor() {
+		const top = this.$scroll[0].getBoundingClientRect().top;
+		const row = this.$list.find(".chat-row[data-name]").toArray().find((el) => el.getBoundingClientRect().bottom > top);
+		return row && { name: row.dataset.name, offset: row.getBoundingClientRect().top - top };
+	}
+
+	user_scrolled() {
+		const scroll = this.$scroll[0];
+		if (scroll.scrollTop === this.rendered_top) {
+			this.rendered_top = null;
+			return false;
+		}
+		this.at_bottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
+		return true;
+	}
+
+	rebuild() {
 		this.$list.empty();
 		let day = null;
 		for (const message of this.messages) {
@@ -527,10 +559,7 @@ class QuickReply extends ChatPane {
 		this.$scroll = $(`<div class="chat-scroll"></div>`).appendTo($root);
 		this.$list = $(`<div class="chat-messages"></div>`).appendTo(this.$scroll);
 		this.$list.append($(`<div class="chat-list-empty"></div>`).text(__("Loading...", null, CONTEXT)));
-		this.$scroll.on("scroll", () => {
-			const scroll = this.$scroll[0];
-			this.at_bottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
-		});
+		this.$scroll.on("scroll", () => this.user_scrolled());
 		this.make_composer($root, $tools);
 		this.$network.hide();
 		this.$input.prop("disabled", true);

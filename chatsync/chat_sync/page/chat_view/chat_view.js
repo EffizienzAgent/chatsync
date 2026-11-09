@@ -129,6 +129,7 @@ class ChatView {
 	search() {
 		if (this.segment !== "unassigned") return this.render_conversations();
 		clearTimeout(this.search_timer);
+		this.search_pending = true;
 		this.search_timer = setTimeout(() => this.load_unassigned(), SEARCH_DELAY);
 	}
 
@@ -136,6 +137,9 @@ class ChatView {
 		const state = this.unassigned;
 		const ticket = ++state.ticket;
 		const query = (this.$search.val() || "").trim();
+		if (this.search_pending || query !== state.query) more = false;
+		clearTimeout(this.search_timer);
+		this.search_pending = false;
 		if (!more) Object.assign(state, { items: [], cursor: null });
 		Object.assign(state, { loading: true, error: null, query });
 		this.render_unassigned();
@@ -222,7 +226,7 @@ class ChatView {
 				.text(__("Assign", null, CONTEXT))
 				.on("click", (e) => {
 					e.stopPropagation();
-					this.assign_unassigned(item, item.suggested_contact, $(e.currentTarget));
+					this.assign_unassigned(item, item.suggested_contact, $(e.currentTarget)).catch(() => {});
 				})
 				.appendTo($badges);
 		}
@@ -288,7 +292,7 @@ class ChatView {
 			$(`<button type="button" class="btn btn-sm"></button>`)
 				.addClass(primary ? "btn-primary" : "btn-default")
 				.text(label)
-				.on("click", (e) => action($(e.currentTarget)))
+				.on("click", (e) => Promise.resolve(action($(e.currentTarget))).catch(() => {}))
 				.appendTo($buttons);
 		if (item.suggested_contact)
 			button(

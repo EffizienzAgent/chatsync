@@ -89,7 +89,9 @@ The scheduler syncs every two minutes. Token and transcription keys are stored a
   (`chatsync.api.preview_chat`: the newest messages, fetched live from Beeper and not stored; media
   are named, not loaded; group chats and assigned chats are refused) and ignored
   (`chatsync.api.ignore_chat`), for example private chats. Only the chat ID is kept, on the user's
-  Chat Account; an ignored chat no longer shows up there. When the chat's number belongs to exactly
+  Chat Account; an ignored chat no longer shows up there. Host apps may cache the unassigned list:
+  the INOCEA Hub's Heute page keeps it in Redis, titles of ignored chats included, for up to two
+  minutes. When the chat's number belongs to exactly
   one readable contact that phone matching skips (see the contact filter), the entry names it as
   `existing_contact`, so it can be assigned instead of creating a duplicate.
 - The chat view (`/desk/chat-view`) has two segments: **Conversations** (assigned chats) and

@@ -94,6 +94,13 @@ class TestInboxUnassigned(InboxCase):
 		self.assertEqual(self.ids(api.unassigned_page()), [member["id"]])
 		self.assertIn(api.UNASSIGNED_TIMEOUT, timeouts)
 
+	def test_merged_expansion_is_capped_per_page(self):
+		first, second = chat_json(number()), chat_json(number("16"))
+		merged = [{**chat_json(), "merge": {"chatIDs": [m["id"]]}} for m in (first, second)]
+		self.use(PagedBeeper([merged], extra=[first, second]))
+		with patch.object(api, "MERGED_SEARCH_LIMIT", 1):
+			self.assertEqual(self.ids(api.unassigned_page()), [first["id"]])
+
 	def test_query_searches_all_ages_without_cursor(self):
 		old = {**chat_json(number(), last_days=900), "title": "Erika Alt"}
 		other = {**chat_json(number("16")), "title": "Hans"}
@@ -195,6 +202,14 @@ class TestNameSuggestions(InboxCase):
 		with use_filter:
 			(item,) = api.unassigned_page()["items"]
 		self.assertEqual((item["existing_contact"], item["suggested_contact"]), (private, None))
+
+	def test_chat_with_unknown_number_gets_no_name_suggestion(self):
+		last = f"Unknown{tag()}"
+		named_contact("Ina", last)
+		chat = {**chat_json(number()), "title": f"Ina {last}"}
+		self.use(PagedBeeper([[chat]]))
+		(item,) = api.unassigned_page()["items"]
+		self.assertIsNone(item["suggested_contact"])
 
 	def test_heute_items_carry_the_suggestion(self):
 		last = f"Heute{tag()}"

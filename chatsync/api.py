@@ -147,7 +147,7 @@ def unassigned_items(account, raws, include_ignored: bool = False) -> list[dict]
 		if found.contact or found.excluded:
 			continue
 		existing = phone_contacts(account.user, cp.phone, index) if cp.phone else []
-		suggested = None if existing else name_suggestion(account.user, [raw.get("title"), cp.name], names)
+		suggested = None if cp.phone else name_suggestion(account.user, [raw.get("title"), cp.name], names)
 		result[cp.beeper_chat_id] = {
 			**summary(raw, cp),
 			"network_label": networks.label(cp.network),
@@ -188,6 +188,8 @@ def unassigned_page(cursor: str | None = None, query: str | None = None, include
 		next_cursor = None
 	else:
 		page, next_cursor = beeper_call(client.chats, cursor or None, INBOX_PAGE_SIZE)
+		merged = [raw for raw in page if is_merged(raw)][:MERGED_SEARCH_LIMIT]
+		page = [raw for raw in page if not is_merged(raw) or raw in merged]
 		cache: dict = {}
 		raws = [member for raw in page for member in beeper_call(expand, member_client, raw, cache)]
 	return {"items": unassigned_items(account, raws, bool(cint(include_ignored))), "next_cursor": next_cursor}

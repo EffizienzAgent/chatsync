@@ -5,7 +5,7 @@ from frappe.utils import get_datetime, now_datetime
 
 from chatsync.beeper import BeeperAuthError, BeeperClient, BeeperError
 from chatsync.matching import counterpart, match_chat, phone_index
-from chatsync.merges import expand
+from chatsync.merges import expand, failures
 from chatsync.messages import sort_order, to_site_time, upsert
 
 EDIT_WINDOW_DAYS = 2
@@ -82,7 +82,8 @@ def sync_account(account: str) -> None:
 		client = client_for(doc)
 		index = phone_index()
 		failed: list[tuple[str, str, str]] = []
-		for raw in walk_members(client, threshold):
+		members: dict = {}
+		for raw in walk_members(client, threshold, members):
 			cp = counterpart(raw)
 			if not cp:
 				continue
@@ -99,6 +100,7 @@ def sync_account(account: str) -> None:
 				rollback()
 				continue
 			kept(chat)
+		failed += [(chat_id, str(e), "") for chat_id, e in failures(members)]
 		queue_incomplete_histories(account)
 	except BeeperError as e:
 		fail(account, e)
@@ -141,11 +143,14 @@ def walk_chats(client: BeeperClient, threshold: datetime):
 def walk_members(client: BeeperClient, threshold: datetime, cache: dict | None = None):
 	"""Like walk_chats, with merged chats replaced by their members active since `threshold`."""
 	cache = {} if cache is None else cache
+	seen: set[str] = set()
 	for raw in walk_chats(client, threshold):
 		for chat in expand(client, raw, cache):
 			activity = chat.get("lastActivity")
-			if not (activity and to_site_time(activity) < threshold):
-				yield chat
+			if chat["id"] in seen or (activity and to_site_time(activity) < threshold):
+				continue
+			seen.add(chat["id"])
+			yield chat
 
 
 def ensure_chat(account, raw: dict, cp, contact: str) -> str:
@@ -269,11 +274,15 @@ def rematch_contact(contact: str) -> None:
 
 def all_chats(client: BeeperClient):
 	cache: dict = {}
+	seen: set[str] = set()
 	cursor = None
 	while True:
 		items, cursor = client.chats(cursor)
 		for raw in items:
-			yield from expand(client, raw, cache)
+			for chat in expand(client, raw, cache):
+				if chat["id"] not in seen:
+					seen.add(chat["id"])
+					yield chat
 		if not cursor or not items:
 			return
 

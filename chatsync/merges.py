@@ -7,8 +7,6 @@ import frappe
 
 from chatsync.beeper import BeeperAuthError, BeeperError
 
-LOGGED_FOR_SECONDS = 24 * 60 * 60
-
 
 def is_merged(raw: dict) -> bool:
 	return raw.get("merge") is not None
@@ -34,7 +32,11 @@ def chat_ids_in(value):
 
 
 def expand(client, raw: dict, cache: dict | None = None) -> list[dict]:
-	"""The member chats of a merged chat (fetched once per `cache`), else the chat itself."""
+	"""The member chats of a merged chat, else the chat itself.
+
+	`cache` maps member IDs to their chat, or to the BeeperError that kept it from loading,
+	so each member is fetched once per run and the caller can count failures.
+	"""
 	if not is_merged(raw):
 		return [raw]
 	cache = {} if cache is None else cache
@@ -43,19 +45,20 @@ def expand(client, raw: dict, cache: dict | None = None) -> list[dict]:
 		if chat_id not in cache:
 			cache[chat_id] = fetch(client, chat_id)
 		found = cache[chat_id]
-		if found and not is_merged(found):
+		if isinstance(found, dict) and not is_merged(found):
 			members.append(found)
 	return members
 
 
-def fetch(client, chat_id: str) -> dict | None:
+def failures(cache: dict) -> list[tuple[str, BeeperError]]:
+	return [(chat_id, e) for chat_id, e in cache.items() if isinstance(e, BeeperError)]
+
+
+def fetch(client, chat_id: str) -> dict | BeeperError:
 	try:
 		return client.chat(chat_id)
 	except BeeperAuthError:
 		raise
 	except BeeperError as e:
-		key = f"chatsync-member-failed-{chat_id}"
-		if not frappe.cache.get_value(key):
-			frappe.cache.set_value(key, 1, expires_in_sec=LOGGED_FOR_SECONDS)
-			frappe.log_error(title=f"Chat Sync could not load merged member {chat_id}: {e}")
-		return None
+		frappe.logger("chatsync").warning(f"Merged member {chat_id} could not be loaded: {e}")
+		return e

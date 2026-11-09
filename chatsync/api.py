@@ -14,6 +14,7 @@ from chatsync.phone import normalize
 UNASSIGNED_TIMEOUT = 5
 PHONE_NETWORKS = {"whatsapp", "signal"}
 PREVIEW_LIMIT = 100
+MERGED_SEARCH_LIMIT = 10
 
 
 @contextmanager
@@ -100,11 +101,18 @@ def add_row(contact: str, values: dict) -> None:
 
 @frappe.whitelist()
 def search_chats(query: str) -> list[dict]:
-	client = sync.client_for(session_account())
+	account = session_account()
+	client = sync.client_for(account)
+	member_client = sync.client_for(account, timeout=UNASSIGNED_TIMEOUT)
 	cache: dict = {}
+	merged_left = MERGED_SEARCH_LIMIT
 	result = {}
 	for found in beeper_call(client.search_chats, query):
-		for raw in beeper_call(expand, client, found, cache):
+		if is_merged(found):
+			if not merged_left:
+				continue
+			merged_left -= 1
+		for raw in beeper_call(expand, member_client, found, cache):
 			if cp := counterpart(raw):
 				result.setdefault(cp.beeper_chat_id, summary(raw, cp))
 	return list(result.values())
@@ -498,6 +506,8 @@ def start_chat(contact: str, account_id: str, phone: str) -> str:
 				"Beeper could not start the chat ({0}). Is the number registered on this network?"
 			).format(e.message or e.status)
 		)
+	if is_merged(raw):
+		raw = started_member(client, raw, account_id, phone)
 	cp = counterpart(raw)
 	if not cp:
 		raw, cp = direct_chat(client, raw["id"])
@@ -516,6 +526,18 @@ def start_chat(contact: str, account_id: str, phone: str) -> str:
 			)
 		)
 	return assign(account, raw, cp, contact)
+
+
+def started_member(client, raw: dict, account_id: str, phone: str) -> dict:
+	"""Beeper may answer a start with the merged chat the new chat joined; pick that member."""
+	members = beeper_call(expand, client, raw)
+	for member in members:
+		if member.get("accountID") == account_id:
+			return member
+	for member in members:
+		if (cp := counterpart(member)) and cp.phone == phone:
+			return member
+	frappe.throw(frappe._("This is a merged Beeper chat, pick one of its chats instead."))
 
 
 @frappe.whitelist(methods=["GET"])

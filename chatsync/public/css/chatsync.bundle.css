@@ -71,6 +71,14 @@
 .chatsync-ui .chat-transcript { margin-top: 2px; font-style: italic; }
 .chatsync-ui .chat-meta { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 2px; font-size: 11px; color: var(--text-muted); }
 .chatsync-ui .chat-sender { margin-right: auto; font-weight: 600; }
+.chatsync-ui .chat-group-row { align-items: flex-end; gap: 6px; }
+.chatsync-ui .chat-group-row .chat-reactions { padding-left: 38px; }
+.chatsync-ui .chat-sender-avatar { width: 28px; height: 28px; font-size: 11px; margin-bottom: 2px; }
+.chatsync-ui .chat-sender-name { font-size: var(--text-xs); font-weight: 600; color: var(--text-muted); margin-bottom: 2px; }
+.chatsync-ui .chat-group-icon { display: inline-flex; flex: none; color: var(--text-muted); }
+.chatsync-ui .chat-group-icon .icon { stroke: currentColor; }
+.chatsync-ui .chat-members { display: flex; flex-wrap: wrap; gap: 2px 6px; margin-top: 2px; font-size: var(--text-xs); color: var(--text-muted); }
+.chatsync-ui .chat-members a { color: var(--text-color); text-decoration: underline; }
 .chatsync-ui .chat-composer { display: flex; align-items: flex-end; gap: var(--margin-sm); padding: var(--padding-sm) var(--padding-md); border-top: 1px solid var(--border-color); background: var(--card-bg); }
 .chatsync-ui .chat-network { width: auto; max-width: 160px; flex: none; height: 36px; }
 .chatsync-ui .chat-input { flex: 1; resize: none; min-height: 36px; line-height: 20px; padding: 7px 12px; box-sizing: border-box; overflow-y: auto; border-radius: 18px; }

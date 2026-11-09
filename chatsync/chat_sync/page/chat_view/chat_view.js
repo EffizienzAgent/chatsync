@@ -1,4 +1,4 @@
-const { CONTEXT, avatar, network_chip, server_message, local_time } = chatsync.ui;
+const { CONTEXT, avatar, network_chip, server_message, local_time, group_icon, group_summary } = chatsync.ui;
 const SEARCH_DELAY = 400;
 
 frappe.pages["chat-view"].on_page_load = function (wrapper) {
@@ -174,15 +174,25 @@ class ChatView extends chatsync.ui.ChatPane {
 		$row.append(avatar(title, item.avatar_url));
 		const $text = $(`<div class="chat-row-text"></div>`).appendTo($row);
 		const $top = $(`<div class="chat-row-top"></div>`).appendTo($text);
+		if (item.is_group) group_icon().appendTo($top);
 		$(`<span class="chat-row-title"></span>`).text(title).appendTo($top);
 		$(`<span class="chat-row-time"></span>`).text(this.short_time(local_time(item.last_activity))).appendTo($top);
 		const $bottom = $(`<div class="chat-row-bottom"></div>`).appendTo($text);
-		$(`<span class="chat-row-preview"></span>`).text(item.phone || item.username || "").appendTo($bottom);
+		const line = item.is_group ? group_summary(item) : item.phone || item.username || "";
+		$(`<span class="chat-row-preview"></span>`).attr("title", line).text(line).appendTo($bottom);
 		const $networks = $(`<span class="chat-row-networks"></span>`).appendTo($bottom);
 		network_chip(item.network_label).appendTo($networks);
 		const $badges = $(`<div class="chat-row-badges"></div>`);
 		const badge = (text, kind) => $(`<span class="chat-badge"></span>`).addClass(kind || "").text(text).appendTo($badges);
 		if (item.ignored) badge(__("Ignored", null, CONTEXT), "muted");
+		if (item.is_group && item.suggested_parties.length)
+			$(`<button type="button" class="btn btn-xs btn-primary chat-suggestion-assign"></button>`)
+				.text(__("Assign group", null, CONTEXT))
+				.on("click", (e) => {
+					e.stopPropagation();
+					this.pick_group(item);
+				})
+				.appendTo($badges);
 		if (item.ambiguous) badge(__("Unclear", null, CONTEXT));
 		if (item.existing_contact) badge(__("Contact exists", null, CONTEXT));
 		if (item.suggested_contact) {
@@ -212,6 +222,8 @@ class ChatView extends chatsync.ui.ChatPane {
 		this.page.clear_menu();
 		this.mode = "preview";
 		this.preview = item;
+		this.is_group = Boolean(item.is_group);
+		this.members = [];
 		this.key = `unassigned:${item.beeper_chat_id}`;
 		this.contact = null;
 		this.chat = null;
@@ -260,14 +272,18 @@ class ChatView extends chatsync.ui.ChatPane {
 				.text(label)
 				.on("click", (e) => Promise.resolve(action($(e.currentTarget))).catch(() => {}))
 				.appendTo($buttons);
-		if (item.suggested_contact)
+		if (item.is_group) {
+			button(__("Assign group", null, CONTEXT), () => this.pick_group(item), true);
+		} else if (item.suggested_contact)
 			button(
 				__("Assign to {0}", [item.suggested_contact_name], CONTEXT),
 				($button) => this.assign_unassigned(item, item.suggested_contact, $button),
 				true
 			);
-		button(__("Assign contact", null, CONTEXT), () => this.pick_contact(item), !item.suggested_contact);
-		if (!item.existing_contact) button(__("Create contact", null, CONTEXT), ($button) => this.create_for(item, $button));
+		if (!item.is_group) {
+			button(__("Assign contact", null, CONTEXT), () => this.pick_contact(item), !item.suggested_contact);
+			if (!item.existing_contact) button(__("Create contact", null, CONTEXT), ($button) => this.create_for(item, $button));
+		}
 		if (item.ignored) button(__("Stop ignoring", null, CONTEXT), ($button) => this.set_ignored(item, false, $button));
 		else button(__("Ignore", null, CONTEXT), ($button) => this.set_ignored(item, true, $button));
 	}
@@ -294,6 +310,14 @@ class ChatView extends chatsync.ui.ChatPane {
 			},
 		});
 		dialog.show();
+	}
+
+	pick_group(item) {
+		chatsync.ui.assign_group(item, (chat) => {
+			this.drop_unassigned(item);
+			this.set_segment("conversations");
+			frappe.set_route("chat-view", chat);
+		});
 	}
 
 	busy($button, promise) {
@@ -363,6 +387,7 @@ class ChatView extends chatsync.ui.ChatPane {
 		const $titles = $(`<div class="chat-titles"></div>`).appendTo($header);
 		this.$title = $(`<a class="chat-title"></a>`).appendTo($titles);
 		this.$subtitle = $(`<div class="chat-subtitle"></div>`).appendTo($titles);
+		this.$members = $(`<div class="chat-members"></div>`).appendTo($titles).hide();
 		this.$done = $(`<button type="button" class="btn btn-default btn-sm chat-done"></button>`)
 			.on("click", () => this.toggle_done().catch(() => {}))
 			.appendTo($header)
@@ -390,6 +415,7 @@ class ChatView extends chatsync.ui.ChatPane {
 		this.key = null;
 		this.mode = null;
 		this.preview = null;
+		this.is_group = false;
 		this.$conversation.removeClass("chat-previewing");
 		this.$actions.empty().hide();
 		this.clear_pending();
@@ -439,6 +465,7 @@ class ChatView extends chatsync.ui.ChatPane {
 		$row.append(avatar(row.title, row.avatar_url));
 		const $text = $(`<div class="chat-row-text"></div>`).appendTo($row);
 		const $top = $(`<div class="chat-row-top"></div>`).appendTo($text);
+		if (row.is_group) group_icon().appendTo($top);
 		$(`<span class="chat-row-title"></span>`).text(row.title).appendTo($top);
 		$(`<span class="chat-row-time"></span>`).text(this.short_time(row.last_message_at)).appendTo($top);
 		const $bottom = $(`<div class="chat-row-bottom"></div>`).appendTo($text);
@@ -478,6 +505,9 @@ class ChatView extends chatsync.ui.ChatPane {
 			this.own = data.chat.own;
 			this.key = chat;
 			this.contact = null;
+			this.is_group = Boolean(data.chat.is_group);
+			this.members = data.chat.members || [];
+			this.parties = data.chat.parties || [];
 			this.chats = [
 				{
 					name: chat,
@@ -500,6 +530,8 @@ class ChatView extends chatsync.ui.ChatPane {
 			if (ticket !== this.ticket) return;
 			const data = r.message;
 			this.mode = "contact";
+			this.is_group = false;
+			this.members = [];
 			this.own = true;
 			this.key = contact;
 			this.contact = contact;
@@ -540,6 +572,19 @@ class ChatView extends chatsync.ui.ChatPane {
 		else this.$title.removeAttr("href");
 		const $subtitle = this.$subtitle.empty();
 		[...new Set(this.chats.map((c) => c.network_label))].forEach((label) => network_chip(label).appendTo($subtitle));
+		this.render_members();
+	}
+
+	render_members() {
+		const $members = this.$members.empty().toggle(this.mode === "chat" && this.is_group);
+		if (!$members.is(":visible")) return;
+		const link = (doctype, name, text) => $(`<a></a>`).attr("href", frappe.utils.get_form_link(doctype, name)).text(text);
+		this.parties.forEach((p) => link(p.party_type, p.party, p.title).appendTo($members));
+		$(`<span></span>`).text(__("{0} members", [this.members.length], CONTEXT) + ":").appendTo($members);
+		this.members.forEach((m) => {
+			if (m.contact) link("Contact", m.contact, m.contact_name || m.display_name).appendTo($members);
+			else $(`<span></span>`).text(m.display_name || "?").appendTo($members);
+		});
 	}
 
 	is_done() {
@@ -595,8 +640,11 @@ class ChatView extends chatsync.ui.ChatPane {
 		this.page.clear_menu();
 		if (!this.chat) return;
 		const label = this.network_html();
-		this.page.add_menu_item(__("Move {0} chat to another contact", [label], CONTEXT), () => this.reassign());
-		this.page.add_menu_item(__("Unassign {0} chat", [label], CONTEXT), () => this.unassign());
+		if (this.is_group) this.page.add_menu_item(__("Remove group", null, CONTEXT), () => this.unassign());
+		else {
+			this.page.add_menu_item(__("Move {0} chat to another contact", [label], CONTEXT), () => this.reassign());
+			this.page.add_menu_item(__("Unassign {0} chat", [label], CONTEXT), () => this.unassign());
+		}
 		if (this.data.archive_available) {
 			this.page.add_menu_item(__("Archive {0} chat", [label], CONTEXT), () => this.archive());
 		}
@@ -652,7 +700,10 @@ class ChatView extends chatsync.ui.ChatPane {
 	unassign() {
 		const chat = this.chat;
 		const label = this.network_html();
-		frappe.confirm(__("Unassign the {0} chat from the contact? Its messages will be deleted.", [label], CONTEXT), () =>
+		const question = this.is_group
+			? __("Remove the group from the CRM? Its messages will be deleted and it is not suggested again.", null, CONTEXT)
+			: __("Unassign the {0} chat from the contact? Its messages will be deleted.", [label], CONTEXT);
+		frappe.confirm(question, () =>
 			frappe.call({ method: "chatsync.api.unassign_chat", args: { chat } }).then(() => {
 				this.forget_contacts();
 				if (this.contact && this.chats.length > 1) return this.show({ contact: this.contact });

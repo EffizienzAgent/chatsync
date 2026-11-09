@@ -49,6 +49,37 @@ so the change shows at once.
 chatsync_chat_done = ["my_app.chat.on_done"]
 ```
 
+## Group parties: `chatsync_group_parties`
+
+A dotted path (the last app that sets it wins) to a function `parties(contacts) -> list` that
+returns the parties a group chat should be attached to, given the contacts its members matched:
+`(party_type, party)` tuples or `{"party_type": …, "party": …}` dicts. chatsync dedupes them and
+drops the ones the user cannot read; the user confirms them in *Assign group*. Without the hook no
+party is suggested.
+
+```python
+# my_app/hooks.py
+chatsync_group_parties = "my_app.chat.group_parties"
+chatsync_group_party_type = "Customer"
+
+
+# my_app/chat.py
+def group_parties(contacts):
+	links = frappe.get_all(
+		"Dynamic Link",
+		filters={"parenttype": "Contact", "parent": ["in", contacts], "link_doctype": "Customer"},
+		pluck="link_name",
+	)
+	return [("Customer", name) for name in links]
+```
+
+`chatsync_group_party_type` names the doctype *Assign group* offers when nothing is suggested
+(available in the browser as `frappe.boot.chatsync_group_party_type`). Stored groups keep their
+parties in the child table `Chat Party` (`party_type`, `party`) and their members in `Chat Member`
+(`contact`, `participant_id`, `display_name`, `phone`), so apps can show them on the party's or the
+member's timeline. The shared dialog is `chatsync.ui.assign_group(item, on_done)`, where `item` is
+an unassigned group from `chatsync.api.unassigned_page` or `find_unassigned_chats`.
+
 ## Settings
 
 `Chat Sync Settings` holds the site-wide defaults: *Phone Region* (used to turn numbers without a

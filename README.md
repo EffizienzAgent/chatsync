@@ -11,7 +11,8 @@ networks Beeper bridges end up in one place.
 
 - **One account per user.** Each user adds a **Chat Account** with the Beeper Server's base URL and
   a token. Chats and messages are visible only to their owner (see Privacy).
-- **Direct chats only.** Group chats are ignored. A chat merged in Beeper (one person across
+- **Direct chats, and groups by choice.** Direct chats are matched and stored automatically; group
+  chats only when you assign one explicitly (see *Group chats*). A chat merged in Beeper (one person across
   several networks) is read as its member chats: each member is matched, stored and assigned on its
   own, with its own network, so a merged Signal + Telegram chat can yield one matched Signal chat
   and one unassigned Telegram chat. The merged chat itself is never stored.
@@ -65,7 +66,31 @@ networks Beeper bridges end up in one place.
 - **Voice notes.** Streamed from the Beeper Server on demand and never stored. Transcription on
   demand through Mistral.
 - **Archiving.** Optionally save a conversation as a PDF to
-  [docarchive](https://github.com/EffizienzAgent/docarchive).
+  [docarchive](https://github.com/EffizienzAgent/docarchive). A group is filed under its first party.
+
+## Group chats
+
+- A group chat is **never stored by itself**. The *Unassigned* segment (and host apps such as the
+  INOCEA Hub's Heute page) list group chats that are not stored yet, marked with a group icon:
+  "Group · N members · Suggestion: …". Their members are matched to contacts with the same rules as
+  direct chats (identifier, phone number with the contact filter, full name for members without a
+  number); the suggested parties come from the host hook `chatsync_group_parties` (for example the
+  organizations of the matched contacts, see [docs/extending.md](docs/extending.md)).
+- *Assign group* (`chatsync.api.assign_group`, browser session only) asks which parties the group
+  belongs to (one or more, e.g. a customer and a partner; suggestions preselected, more can be
+  added) and which members to link to their contacts (matched ones preselected). Only then is the
+  group stored, with its parties (`Chat Party`) and members (`Chat Member`), and its full history is
+  imported. Members' contacts get no chat identifier rows, so their direct chats match as before.
+- Stored groups sync like direct chats: new messages, edits and deletions of the last two days,
+  reactions and Beeper's archive state. The member list follows Beeper with every sync; a new
+  member is linked only to a readable contact matched by identifier or phone (never by name, never a
+  new contact), members already known keep their link (or none, as chosen).
+- In the chat view a group shows its parties and members in the header (linked contacts are
+  clickable) and the sender's name and picture on each message; replies go to the group with the
+  same guards as direct chats. A contact's conversation and quick reply contain its direct chats
+  only; groups are opened from the chat view or the parties' timelines.
+- *Remove group* deletes the group and its messages and excludes it, so it is not suggested again
+  (*Show ignored* still lists it, and assigning it again lifts the exclusion).
 
 ## Installation
 
@@ -113,7 +138,7 @@ The scheduler syncs every two minutes. Token and transcription keys are stored a
   not matched again.
 - Unassigned direct chats (`chatsync.api.unassigned_chats`) can be previewed by their owner
   (`chatsync.api.preview_chat`: the newest messages, fetched live from Beeper and not stored; media
-  are named, not loaded; group chats and assigned chats are refused) and ignored
+  are named, not loaded; group chats can be previewed too, assigned chats are refused) and ignored
   (`chatsync.api.ignore_chat`), for example private chats. Only the chat ID is kept, on the user's
   Chat Account; an ignored chat no longer shows up there. Host apps may cache the unassigned list:
   the INOCEA Hub's Heute page keeps it in Redis, titles of ignored chats included, for up to two
@@ -121,7 +146,7 @@ The scheduler syncs every two minutes. Token and transcription keys are stored a
   one readable contact that phone matching skips (see the contact filter), the entry names it as
   `existing_contact`, so it can be assigned instead of creating a duplicate.
 - The chat view (`/desk/chat-view`) has two segments: **Conversations** (assigned chats) and
-  **Unassigned**. *Unassigned* lists the user's direct chats without a contact regardless of age,
+  **Unassigned**. *Unassigned* lists the user's direct chats without a contact and group chats not stored yet, regardless of age,
   live from Beeper and page by page (`chatsync.api.unassigned_page`, 50 Beeper chats per page,
   *Load more* for older ones; a search term uses Beeper's chat search over all ages). Nothing is
   stored. Clicking an entry previews it with the actions *Assign contact*, *Create contact* and
@@ -145,8 +170,8 @@ What gets imported:
 
 ## Privacy
 
-- Only chats with a matching or assigned contact are stored. Messages of everything else never
-  reach the database.
+- Only chats with a matching or assigned contact, and group chats you assigned yourself, are
+  stored. Messages of everything else never reach the database.
 - Chats and messages are visible only to their owner. The exception is the built-in
   **Administrator** user, as which the scheduled sync runs. The **System Manager** role has no
   bypass; it can manage Chat Accounts but not read other users' chats.
@@ -157,8 +182,8 @@ What gets imported:
   (no File record, nothing on disk). Only their name, type and size are saved with the message, and
   for voice notes the transcript. Messages synced before these details were kept show their first
   attachment without name and size.
-- Sending, reacting, marking a chat done (archiving it in Beeper) and starting a chat from a
-  contact are possible only in a browser session, for the chat's owner. Requests that carry an
+- Sending, reacting, marking a chat done (archiving it in Beeper), assigning a group and starting a
+  chat from a contact are possible only in a browser session, for the chat's owner. Requests that carry an
   `Authorization` header (API keys, OAuth), and requests without the session's CSRF token, are
   refused, and there is no background or MCP path for them. Starting a chat sends no message.
 - Transcription sends the audio to Mistral (*Chat Sync Settings* → provider, API key and model).

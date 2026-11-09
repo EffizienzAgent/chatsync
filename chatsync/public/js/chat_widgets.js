@@ -21,6 +21,112 @@ function avatar(title, url) {
 	return $avatar;
 }
 
+function group_icon() {
+	return $(`<span class="chat-group-icon"></span>`)
+		.attr({ title: __("Group", null, CONTEXT), "aria-label": __("Group", null, CONTEXT) })
+		.append(frappe.utils.icon("users", "xs"));
+}
+
+function group_summary(item) {
+	const parts = [__("Group", null, CONTEXT), __("{0} members", [item.member_count], CONTEXT)];
+	const parties = (item.suggested_parties || []).map((p) => p.title);
+	if (parties.length) parts.push(__("Suggestion: {0}", [parties.join(", ")], CONTEXT));
+	return parts.join(" · ");
+}
+
+/** Asks which parties a group belongs to and which members' contacts to link, then stores it. */
+function assign_group(item, on_done) {
+	const parties = (item.suggested_parties || []).map((p) => ({ ...p }));
+	const party_type = parties[0]?.party_type || frappe.boot.chatsync_group_party_type || null;
+	const escape = frappe.utils.escape_html;
+	const party_option = (party, index) => ({ label: escape(party.title || party.party), value: String(index), checked: 1 });
+	const members = (item.members || []).filter((m) => m.contact);
+	const dialog = new frappe.ui.Dialog({
+		title: __("Assign group: {0}", [item.title || item.beeper_chat_id], CONTEXT),
+		fields: [
+			{
+				fieldname: "party_type",
+				fieldtype: "Link",
+				options: "DocType",
+				label: __("Party type", null, CONTEXT),
+				default: party_type,
+				hidden: party_type ? 1 : 0,
+			},
+			{
+				fieldname: "parties",
+				fieldtype: "MultiCheck",
+				label: party_type ? __(party_type) : __("Parties", null, CONTEXT),
+				options: parties.map(party_option),
+				sort_options: false,
+				columns: 1,
+			},
+			{
+				fieldname: "add_party",
+				fieldtype: "Dynamic Link",
+				options: "party_type",
+				label: party_type ? __("Add {0}", [__(party_type)], CONTEXT) : __("Add party", null, CONTEXT),
+				onchange() {
+					const value = dialog.get_value("add_party");
+					const type = dialog.get_value("party_type");
+					if (!value || !type) return;
+					const field = dialog.fields_dict.parties;
+					const checked = new Set(field.get_value());
+					field.df.options.forEach((option) => (option.checked = checked.has(option.value) ? 1 : 0));
+					if (!parties.some((p) => p.party_type === type && p.party === value)) {
+						parties.push({ party_type: type, party: value, title: frappe.utils.get_link_title(type, value) });
+						field.df.options.push(party_option(parties[parties.length - 1], parties.length - 1));
+					}
+					field.refresh();
+					dialog.set_value("add_party", "");
+				},
+			},
+			{
+				fieldname: "contacts",
+				fieldtype: "MultiCheck",
+				label: __("Link members to contacts", null, CONTEXT),
+				options: members.map((m, index) => ({
+					label: escape(
+						m.contact_name && m.contact_name !== m.display_name ? `${m.display_name} → ${m.contact_name}` : m.display_name || m.contact
+					),
+					value: String(index),
+					checked: 1,
+				})),
+				sort_options: false,
+				columns: 1,
+				hidden: members.length ? 0 : 1,
+			},
+			{
+				fieldtype: "HTML",
+				options: `<p class="text-muted small">${escape(
+					__("Only this group is stored, with its full history. Members' other chats are not affected.", null, CONTEXT)
+				)}</p>`,
+			},
+		],
+		primary_action_label: __("Assign group", null, CONTEXT),
+		primary_action: (values) => {
+			const chosen = (values.parties || []).map((index) => parties[Number(index)]);
+			dialog.disable_primary_action();
+			frappe
+				.call({
+					method: "chatsync.api.assign_group",
+					args: {
+						beeper_chat_id: item.beeper_chat_id,
+						parties: JSON.stringify(chosen.map(({ party_type, party }) => ({ party_type, party }))),
+						contacts: JSON.stringify((values.contacts || []).map((index) => members[Number(index)].contact)),
+					},
+				})
+				.then((r) => {
+					dialog.hide();
+					frappe.show_alert({ message: __("Group assigned", null, CONTEXT), indicator: "green" });
+					on_done?.(r.message);
+				})
+				.catch(() => dialog.enable_primary_action());
+		},
+	});
+	dialog.show();
+	return dialog;
+}
+
 function network_chip(label) {
 	return $(`<span class="chat-network-chip"></span>`).attr("data-network", (label || "").toLowerCase()).text(label);
 }
@@ -148,9 +254,17 @@ class ChatPane {
 		return message.sent_at.slice(0, 10);
 	}
 
+	sender(message) {
+		const member = (this.members || []).find((m) => m.participant_id && m.participant_id === message.sender_id);
+		return {
+			name: member?.contact_name || message.sender_name || member?.display_name || "?",
+			image: member?.avatar_url || null,
+		};
+	}
+
 	meta(message, $meta) {
 		if (this.chats.length > 1 && message.network_label) network_chip(message.network_label).appendTo($meta);
-		if (message.direction !== "Out" && this.mode === "contact" && message.sender_name && message.sender_name !== this.title)
+		if (message.direction !== "Out" && !this.is_group && this.mode === "contact" && message.sender_name && message.sender_name !== this.title)
 			$(`<span class="chat-sender"></span>`).text(message.sender_name).appendTo($meta);
 		$(`<span class="chat-time"></span>`).text(message.sent_at.slice(11, 16)).appendTo($meta);
 		if (this.confirmed.has(message.name))
@@ -176,7 +290,13 @@ class ChatPane {
 		if (message.html) $(`<div class="chat-text chat-html"></div>`).html(message.html).appendTo($bubble);
 		if (message.transcript) $(`<div class="chat-transcript"></div>`).text(message.transcript).appendTo($bubble);
 		this.meta(message, $(`<div class="chat-meta"></div>`).appendTo($bubble));
-		const $row = $(`<div class="chat-row"></div>`).toggleClass("out", out).attr("data-name", message.name).append($bubble);
+		const $row = $(`<div class="chat-row"></div>`).toggleClass("out", out).attr("data-name", message.name);
+		if (this.is_group && !out) {
+			const sender = this.sender(message);
+			$row.addClass("chat-group-row").append(avatar(sender.name, sender.image).addClass("chat-sender-avatar"));
+			$(`<div class="chat-sender-name"></div>`).text(sender.name).prependTo($bubble);
+		}
+		$row.append($bubble);
 		if (message.reactions?.length) this.reaction_chips(message).appendTo($row);
 		if (this.can_react(message)) this.reaction_picker(message).appendTo($row);
 		return $row;
@@ -191,7 +311,8 @@ class ChatPane {
 		for (const group of message.reactions) {
 			const names = group.mine ? [__("You", null, CONTEXT)] : [];
 			const others = group.count - (group.mine ? 1 : 0);
-			if (others > 0) names.push(others > 1 ? `${this.title} +${others - 1}` : this.title);
+			if (others > 0 && this.is_group) names.push(String(others));
+			else if (others > 0) names.push(others > 1 ? `${this.title} +${others - 1}` : this.title);
 			$(`<span class="chat-reaction"></span>`)
 				.toggleClass("mine", group.mine)
 				.toggleClass("chat-reaction-text", !is_emoji(group.key))
@@ -609,6 +730,9 @@ class QuickReply extends ChatPane {
 Object.assign(chatsync.ui, {
 	CONTEXT,
 	ChatPane,
+	assign_group,
+	group_icon,
+	group_summary,
 	QuickReply,
 	avatar,
 	network_chip,

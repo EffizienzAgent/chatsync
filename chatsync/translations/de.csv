@@ -138,3 +138,37 @@ Unread Count,Ungelesen,
 Last Incoming At,Zuletzt eingegangen,
 Last Outgoing At,Zuletzt gesendet,
 Reactions,Reaktionen,
+Chat Party,Chat-Zuordnung,
+Chat Member,Chat-Teilnehmer,
+Group Chat,Gruppenchat,
+Parties,Zuordnungen,
+Members,Teilnehmer,
+Party Type,Zuordnungstyp,
+Party,Zuordnung,
+Participant ID,Teilnehmer-ID,
+Display Name,Anzeigename,
+Sender ID,Absender-ID,
+Excluded Groups,Ausgeschlossene Gruppen,
+Own Participant ID,Eigene Teilnehmer-ID,
+Only group chats can be assigned to parties.,Nur Gruppenchats lassen sich Zuordnungen geben.,
+Choose at least one party or member.,Bitte mindestens eine Zuordnung oder einen Teilnehmer wählen.,
+Not a member of this group: {0},Kein Teilnehmer dieser Gruppe: {0},
+Invalid party: {0},Ungültige Zuordnung: {0},
+{0} {1} not found,{0} {1} nicht gefunden,
+No permission for {0} {1},Keine Berechtigung für {0} {1},
+"A group chat belongs to parties, not to one contact.","Ein Gruppenchat gehört zu Zuordnungen, nicht zu einem Kontakt.",
+Group chat {0},Gruppenchat {0},
+Group,Gruppe,
+Group,Gruppe,Chat View
+{0} members,{0} Teilnehmer,Chat View
+Assign group,Gruppe zuordnen,Chat View
+Assign group: {0},Gruppe zuordnen: {0},Chat View
+Party type,Zuordnungstyp,Chat View
+Parties,Zuordnungen,Chat View
+Add {0},{0} hinzufügen,Chat View
+Add party,Zuordnung hinzufügen,Chat View
+Link members to contacts,Teilnehmer mit Kontakten verknüpfen,Chat View
+"Only this group is stored, with its full history. Members' other chats are not affected.","Nur diese Gruppe wird gespeichert, mit ihrem ganzen Verlauf. Andere Chats der Teilnehmer bleiben unberührt.",Chat View
+Group assigned,Gruppe zugeordnet,Chat View
+Remove group,Gruppe entfernen,Chat View
+Remove the group from the CRM? Its messages will be deleted and it is not suggested again.,Gruppe aus dem CRM entfernen? Ihre Nachrichten werden gelöscht und sie wird nicht mehr vorgeschlagen.,Chat View

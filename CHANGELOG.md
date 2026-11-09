@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/EffizienzAgent/chatsync/compare/v0.3.1...v0.4.0) (2026-11-09)
+
+
+### Features
+
+* **chat-view:** unassigned segment with live preview, ignore/unignore and name suggestions ([ec2aad7](https://github.com/EffizienzAgent/chatsync/commit/ec2aad717f1d9fdfd2eee0c9fa9a40643c04951a))
+* list unassigned chats of any age page by page, unignore chats, suggest contacts by name ([ef623ae](https://github.com/EffizienzAgent/chatsync/commit/ef623ae6fe8c4bb548762b6203d3a2456c18cbc9))
+
+
+### Bug Fixes
+
+* name suggestions only without phone number, cap merged expansion per page, fresh list on new search ([9fd4aeb](https://github.com/EffizienzAgent/chatsync/commit/9fd4aeb577a9b4d4de727db513033771a9503b76))
+
 ## [0.3.1](https://github.com/EffizienzAgent/chatsync/compare/v0.3.0...v0.3.1) (2026-11-09)
 
 

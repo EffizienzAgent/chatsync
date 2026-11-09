@@ -26,27 +26,58 @@ class Match:
 	excluded: bool
 
 
+def participants(chat: dict) -> list[dict]:
+	found = chat.get("participants") or []
+	if isinstance(found, dict):
+		found = found.get("items") or []
+	return found
+
+
+def others(chat: dict) -> list[dict]:
+	return [p for p in participants(chat) if not p.get("isSelf")]
+
+
+def self_id(chat: dict) -> str | None:
+	return next((p.get("id") for p in participants(chat) if p.get("isSelf")), None)
+
+
+def network_of(chat: dict) -> str:
+	return chat["accountID"].split(".")[0]
+
+
+def is_group(chat: dict) -> bool:
+	return chat.get("type") == "group" and not is_merged(chat)
+
+
+def member_count(chat: dict) -> int:
+	"""Participants besides the user; list pages carry only some of a large group's participants."""
+	found = chat.get("participants")
+	if isinstance(found, dict) and found.get("hasMore") and found.get("total"):
+		return found["total"] - (1 if self_id(chat) else 0)
+	return len(others(chat))
+
+
+def person_counterpart(chat: dict, person: dict) -> Counterpart:
+	return Counterpart(
+		network=network_of(chat),
+		beeper_chat_id=chat["id"],
+		participant_id=person.get("id"),
+		phone=person.get("phoneNumber"),
+		username=person.get("username"),
+		name=person.get("fullName"),
+		image=person.get("imgURL"),
+	)
+
+
 def counterpart(chat: dict) -> Counterpart | None:
 	if chat.get("type") != "single":
 		return None
 	if is_merged(chat):
 		return None
-	participants = chat.get("participants") or []
-	if isinstance(participants, dict):
-		participants = participants.get("items") or []
-	others = [p for p in participants if not p.get("isSelf")]
-	if len(others) != 1:
+	people = others(chat)
+	if len(people) != 1:
 		return None
-	other = others[0]
-	return Counterpart(
-		network=chat["accountID"].split(".")[0],
-		beeper_chat_id=chat["id"],
-		participant_id=other.get("id"),
-		phone=other.get("phoneNumber"),
-		username=other.get("username"),
-		name=other.get("fullName"),
-		image=other.get("imgURL"),
-	)
+	return person_counterpart(chat, people[0])
 
 
 def readable(user: str, contacts) -> list[str]:
@@ -164,3 +195,27 @@ def match_chat(account, cp: Counterpart, index: dict[str, list[str]] | None = No
 	if stored and frappe.db.exists("Contact", stored) and readable(account.user, [stored]):
 		return Match(stored, False, False)
 	return match(account.user, cp, index=index)
+
+
+def member_contact(user: str, chat: dict, person: dict, index: dict, names: dict | None = None) -> str | None:
+	"""A group member's contact by identifier or phone, as for direct chats; with `names` (suggestions
+	only, never for automatic links) also by full name when the member has no phone number."""
+	found = match(user, person_counterpart(chat, person), index)
+	if found.contact:
+		return found.contact
+	if names is None or person.get("phoneNumber") or found.ambiguous or found.excluded:
+		return None
+	return name_suggestion(user, [person.get("fullName")], names)
+
+
+def member_row(person: dict, contact: str | None) -> dict:
+	return {
+		"participant_id": person.get("id"),
+		"display_name": person.get("fullName") or person.get("username") or person.get("phoneNumber"),
+		"phone": person.get("phoneNumber"),
+		"contact": contact,
+	}
+
+
+def group_members(user: str, chat: dict, index: dict, names: dict | None = None) -> list[dict]:
+	return [member_row(p, member_contact(user, chat, p, index, names)) for p in others(chat)]

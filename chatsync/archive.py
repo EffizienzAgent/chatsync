@@ -82,11 +82,22 @@ def transcript_html(chat, rows: list[dict], start, end) -> str:
 	return (
 		f"<html><head><meta charset='utf-8'><style>{STYLE}</style></head><body>"
 		f"<h3>{escape_html(chat.title or chat.name)}</h3>"
-		f"<p>{escape_html(_('Contact'))}: {escape_html(chat.contact)}<br>"
+		f"<p>{escape_html(_('Group') if chat.is_group else _('Contact'))}: "
+		f"{escape_html(', '.join(p.party for p in chat.parties) if chat.is_group else chat.contact)}<br>"
 		f"{escape_html(_('Network'))}: {escape_html(chat.network or '')}<br>"
 		f"{escape_html(_('Period'))}: {escape_html(period)}</p>"
 		f"<table>{lines}</table></body></html>"
 	)
+
+
+def archive_party(doc) -> tuple:
+	"""A direct chat is filed under its contact, a group chat under its first party."""
+	if doc.is_group:
+		first = doc.parties[0] if doc.parties else None
+		title = doc.title or doc.name
+		return (first and first.party_type, first and first.party, title, _("Group chat {0}").format(title))
+	name = frappe.db.get_value("Contact", doc.contact, "first_name") or doc.contact
+	return "Contact", doc.contact, name, _("Chat with {0}").format(name)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -102,19 +113,19 @@ def archive_chat(chat: str, date_from: str | None = None, date_to: str | None = 
 	start = requested_from or getdate(rows[0].sent_at)
 	end = requested_to or getdate(rows[-1].sent_at)
 	doc = frappe.get_doc("Chat", chat)
-	contact_name = frappe.db.get_value("Contact", doc.contact, "first_name") or doc.contact
+	party_type, party, party_name, title = archive_party(doc)
 	data = render_pdf(transcript_html(doc, rows, start, end))
 	result = upload_document(
 		document_type=DOCUMENT_TYPE,
 		document_date=str(end),
-		file_name=f"chat-{doc.network}-{contact_name}-{start}-{end}.pdf".replace("/", "-").replace(" ", "-"),
+		file_name=f"chat-{doc.network}-{party_name}-{start}-{end}.pdf".replace("/", "-").replace(" ", "-"),
 		content_base64=base64.b64encode(data).decode(),
-		title=_("Chat with {0}").format(contact_name),
+		title=title,
 		source_system=SOURCE_SYSTEM,
 		source_account=doc.account,
-		source_party_type="Contact",
-		source_party_id=doc.contact,
-		source_party_name=contact_name,
+		source_party_type=party_type,
+		source_party_id=party,
+		source_party_name=party_name,
 		source_key=f"chat:{chat}:{date_from or ''}:{date_to or ''}",
 	)
 	return result["name"]
@@ -123,5 +134,11 @@ def archive_chat(chat: str, date_from: str | None = None, date_to: str | None = 
 def assign(document) -> None:
 	if document.source_system != SOURCE_SYSTEM or document.counterparty:
 		return
-	if document.source_party_id and frappe.db.exists("Contact", document.source_party_id):
-		document.counterparty_type, document.counterparty = "Contact", document.source_party_id
+	from docarchive.counterparty import doctypes
+
+	party_type, party = document.source_party_type, document.source_party_id
+	allowed = doctypes()
+	if allowed and party_type not in allowed:
+		return
+	if party_type and party and frappe.db.exists(party_type, party):
+		document.counterparty_type, document.counterparty = party_type, party

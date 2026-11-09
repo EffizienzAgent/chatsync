@@ -247,9 +247,10 @@ class TestPreviewChat(BrowserCase):
 		self.assertEqual(result["title"], self.raw["title"])
 		self.assertEqual(result["network_label"], "WhatsApp")
 
-	def test_group_chat_refused(self):
-		with self.assertRaises(frappe.ValidationError):
-			api.preview_chat(self.group["id"])
+	def test_group_chat_is_previewed(self):
+		preview = api.preview_chat(self.group["id"])
+		self.assertTrue(preview["is_group"])
+		self.assertEqual(preview["network"], "whatsapp")
 
 	def test_assigned_chat_refused(self):
 		api.assign_chat(self.raw["id"], make_contact())

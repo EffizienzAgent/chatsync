@@ -76,7 +76,7 @@ class TestInboxUnassigned(InboxCase):
 		self.use(fake)
 		before = frappe.db.count("Chat")
 		first = api.unassigned_page()
-		self.assertEqual((self.ids(first), first["next_cursor"]), ([recent["id"]], "1"))
+		self.assertEqual((self.ids(first), first["next_cursor"]), ([recent["id"], group["id"]], "1"))
 		second = api.unassigned_page(cursor=first["next_cursor"])
 		self.assertEqual((self.ids(second), second["next_cursor"]), ([old["id"]], None))
 		self.assertEqual(fake.list_calls, [(None, api.INBOX_PAGE_SIZE), ("1", api.INBOX_PAGE_SIZE)])

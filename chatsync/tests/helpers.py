@@ -23,7 +23,7 @@ def use_hooks(case, **hooks):
 
 
 class ChatsyncTestCase(IntegrationTestCase):
-	"""Pins `chatsync_contact_filter` to the default so tests behave the same in any host site."""
+	"""Pins chatsync's host hooks to their defaults so tests behave the same in any host site."""
 
 	def setUp(self):
-		use_hooks(self, chatsync_contact_filter=[])
+		use_hooks(self, chatsync_contact_filter=[], chatsync_group_parties=[], chatsync_group_party_type=[])

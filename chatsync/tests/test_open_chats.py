@@ -226,15 +226,17 @@ class TestSetChatDone(OpenChatsCase):
 			api.set_chat_done(beeper_chat_id=self.raw["id"])
 		self.assertEqual(self.fake.archived, [])
 
-	def test_archives_an_unassigned_direct_chat_only(self):
+	def test_archives_an_unassigned_direct_or_group_chat(self):
 		loose = {**chat_json(number("16")), "isArchived": False}
 		group = chat_json(kind="group", others=2)
-		self.fake.chat_items += [loose, group]
+		odd = chat_json(others=2)
+		self.fake.chat_items += [loose, group, odd]
 		self.browser()
 		self.assertEqual(api.set_chat_done(beeper_chat_id=loose["id"])["done"], True)
-		self.assertEqual(self.fake.archived, [(loose["id"], True)])
+		api.set_chat_done(beeper_chat_id=group["id"])
+		self.assertEqual(self.fake.archived, [(loose["id"], True), (group["id"], True)])
 		with self.assertRaises(frappe.ValidationError):
-			api.set_chat_done(beeper_chat_id=group["id"])
+			api.set_chat_done(beeper_chat_id=odd["id"])
 		with self.assertRaises(frappe.ValidationError):
 			api.set_chat_done()
 

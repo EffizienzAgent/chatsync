@@ -4,13 +4,25 @@ import frappe
 from frappe.utils import get_datetime, now_datetime
 
 from chatsync.beeper import BeeperAuthError, BeeperClient, BeeperError
-from chatsync.matching import counterpart, match_chat, phone_index
+from chatsync.matching import (
+	counterpart,
+	is_group,
+	match,
+	match_chat,
+	member_row,
+	network_of,
+	others,
+	person_counterpart,
+	phone_index,
+	self_id,
+)
 from chatsync.merges import archived, expand, failures, listed_states
 from chatsync.messages import sort_order, to_site_time, upsert
 
 EDIT_WINDOW_DAYS = 2
 STATE_CHECK_MINUTES = 10
 STATE_CHECKS_PER_RUN = 20
+MEMBER_FIELDS = ("participant_id", "display_name", "phone", "contact")
 STATE_FIELDS = ["name", "beeper_chat_id", "beeper_archived", "unread_count", "beeper_state_checked_at"]
 
 
@@ -90,13 +102,19 @@ def sync_account(account: str) -> None:
 		seen: set[str] = set()
 		for raw in walk_members(client, threshold, members, listed):
 			cp = counterpart(raw)
-			if not cp:
-				continue
-			found = match_chat(doc, cp, index=index)
-			if not found.contact:
+			group = None if cp else stored_group(doc, raw)
+			if cp:
+				contact = match_chat(doc, cp, index=index).contact
+				if not contact:
+					continue
+			elif not group:
 				continue
 			try:
-				chat = ensure_chat(doc, raw, cp, found.contact)
+				chat = (
+					ensure_chat(doc, raw, cp, contact)
+					if cp
+					else refresh_group(client, doc, raw, group, index)
+				)
 				sync_chat(client, chat, started, days)
 				current = frappe.db.get_value("Chat", chat, STATE_FIELDS, as_dict=True)
 				store_state(current, archived(client, raw, members), raw.get("unreadCount") or 0)
@@ -104,7 +122,7 @@ def sync_account(account: str) -> None:
 			except BeeperAuthError:
 				raise
 			except Exception as e:
-				failed.append((cp.beeper_chat_id, str(e), frappe.get_traceback()))
+				failed.append((raw["id"], str(e), frappe.get_traceback()))
 				rollback()
 				continue
 			kept(chat)
@@ -238,6 +256,65 @@ def ensure_chat(account, raw: dict, cp, contact: str) -> str:
 	)
 	doc.insert(ignore_permissions=True)
 	return doc.name
+
+
+def stored_group(account, raw: dict) -> str | None:
+	"""Groups are stored only by explicit assignment; the sync keeps stored ones up to date."""
+	if not is_group(raw):
+		return None
+	return frappe.db.get_value("Chat", {"account": account.name, "beeper_chat_id": raw["id"], "is_group": 1})
+
+
+def with_all_participants(client: BeeperClient, raw: dict) -> dict:
+	found = raw.get("participants")
+	if isinstance(found, dict) and found.get("hasMore"):
+		return client.chat(raw["id"], max_participants=-1)
+	return raw
+
+
+def ensure_group(account, raw: dict, parties: list[dict], members: list[dict]) -> str:
+	name = frappe.db.get_value("Chat", {"account": account.name, "beeper_chat_id": raw["id"]})
+	doc = frappe.get_doc("Chat", name) if name else frappe.new_doc("Chat")
+	doc.update(
+		{
+			"account": account.name,
+			"beeper_chat_id": raw["id"],
+			"user": account.user,
+			"network": network_of(raw),
+			"title": raw.get("title"),
+			"is_group": 1,
+			"self_id": self_id(raw),
+			"contact": None,
+		}
+	)
+	doc.set("parties", parties)
+	doc.set("members", members)
+	doc.save(ignore_permissions=True)
+	return doc.name
+
+
+def refresh_group(client: BeeperClient, account, raw: dict, chat: str, index: dict) -> str:
+	"""Mirrors the participants; a new one is linked only to a readable contact matched by identifier or
+	phone, members already known keep their contact (or none, as the user chose)."""
+	raw = with_all_participants(client, raw)
+	doc = frappe.get_doc("Chat", chat)
+	known = {m.participant_id: m.contact for m in doc.members}
+	rows = []
+	for person in others(raw):
+		pid = person.get("id")
+		contact = (
+			known[pid]
+			if pid in known
+			else match(account.user, person_counterpart(raw, person), index).contact
+		)
+		rows.append(member_row(person, contact))
+	current = [{key: m.get(key) for key in MEMBER_FIELDS} for m in doc.members]
+	if rows != current or doc.title != raw.get("title") or doc.self_id != self_id(raw):
+		doc.title = raw.get("title")
+		doc.self_id = self_id(raw)
+		doc.set("members", rows)
+		doc.save(ignore_permissions=True)
+	return chat
 
 
 def sync_chat(client: BeeperClient, chat: str, started: datetime, initial_days: int) -> None:

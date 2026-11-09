@@ -1,0 +1,33 @@
+{
+ "doctype": "DocType",
+ "name": "Chat Party",
+ "module": "Chat Sync",
+ "engine": "InnoDB",
+ "custom": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "field_order": [
+  "party_type",
+  "party"
+ ],
+ "fields": [
+  {
+   "fieldname": "party_type",
+   "fieldtype": "Link",
+   "label": "Party Type",
+   "options": "DocType",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "party",
+   "fieldtype": "Dynamic Link",
+   "label": "Party",
+   "options": "party_type",
+   "reqd": 1,
+   "in_list_view": 1
+  }
+ ],
+ "istable": 1,
+ "editable_grid": 1
+}

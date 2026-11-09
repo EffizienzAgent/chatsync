@@ -59,13 +59,19 @@ def is_shown(raw: dict) -> bool:
 	return raw.get("type") not in SKIPPED_TYPES and not raw.get("isHidden") and not raw.get("isDeleted")
 
 
-def reactions_from(raw: dict, counterpart_id: str | None) -> list[dict]:
-	"""Direct chats only: every reaction not by the counterpart is the user's own."""
+def is_own(participant_id: str | None, counterpart_id: str | None, self_id: str | None) -> bool:
+	"""Groups know the user's own participant ID; in direct chats every reaction not by the counterpart is the user's."""
+	if self_id:
+		return participant_id == self_id
+	return bool(counterpart_id) and participant_id != counterpart_id
+
+
+def reactions_from(raw: dict, counterpart_id: str | None, self_id: str | None = None) -> list[dict]:
 	return [
 		{
 			"key": r["reactionKey"],
 			"participant_id": r.get("participantID"),
-			"is_self": bool(counterpart_id) and r.get("participantID") != counterpart_id,
+			"is_self": is_own(r.get("participantID"), counterpart_id, self_id),
 		}
 		for r in raw.get("reactions") or []
 		if r.get("reactionKey")
@@ -81,15 +87,16 @@ def grouped_reactions(value: str | None) -> list[dict]:
 	return list(groups.values())
 
 
-def values_from(raw: dict, counterpart_id: str | None = None) -> dict:
+def values_from(raw: dict, counterpart_id: str | None = None, self_id: str | None = None) -> dict:
 	attachments = raw.get("attachments") or []
-	reactions = reactions_from(raw, counterpart_id)
+	reactions = reactions_from(raw, counterpart_id, self_id)
 	kind = KINDS.get(raw.get("type"), "Other")
 	return {
 		"sort_key": raw.get("sortKey"),
 		"sent_at": to_site_time(raw["timestamp"]),
 		"direction": "Out" if raw.get("isSender") else "In",
 		"sender_name": raw.get("senderName"),
+		"sender_id": raw.get("senderID"),
 		"kind": kind,
 		"beeper_type": raw.get("type") if kind == "Other" else None,
 		"text": raw.get("text"),
@@ -108,6 +115,7 @@ def preview(raw: dict) -> dict:
 		"sent_at": str(values["sent_at"]),
 		"direction": values["direction"],
 		"sender_name": values["sender_name"],
+		"sender_id": values["sender_id"],
 		"kind": values["kind"],
 		"beeper_type": values["beeper_type"],
 		"text": values["text"],
@@ -141,7 +149,11 @@ def upsert(chat: str, raw: dict) -> str | None:
 		if existing:
 			frappe.delete_doc("Chat Message", existing, ignore_permissions=True, force=True)
 		return None
-	values = values_from(raw, frappe.db.get_value("Chat", chat, "counterpart_id", cache=True))
+	values = values_from(
+		raw,
+		frappe.db.get_value("Chat", chat, "counterpart_id", cache=True),
+		frappe.db.get_value("Chat", chat, "self_id", cache=True),
+	)
 	if not existing:
 		try:
 			doc = frappe.get_doc(

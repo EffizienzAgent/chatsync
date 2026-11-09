@@ -14,7 +14,8 @@
   "initial_sync_done",
   "last_synced_at",
   "last_error",
-  "ignored_chats"
+  "ignored_chats",
+  "excluded_groups"
  ],
  "fields": [
   {
@@ -67,6 +68,14 @@
    "hidden": 1,
    "read_only": 1,
    "description": "Beeper chat IDs the user chose to ignore among unassigned chats"
+  },
+  {
+   "fieldname": "excluded_groups",
+   "fieldtype": "Long Text",
+   "label": "Excluded Groups",
+   "hidden": 1,
+   "read_only": 1,
+   "description": "Beeper group chat IDs that were unassigned and are not offered again"
   }
  ],
  "autoname": "field:user",

@@ -16,6 +16,10 @@
   "counterpart_phone",
   "counterpart_username",
   "contact",
+  "is_group",
+  "self_id",
+  "parties",
+  "members",
   "history_requested",
   "history_complete",
   "history_cursor",
@@ -81,6 +85,34 @@
    "fieldtype": "Link",
    "label": "Contact",
    "options": "Contact"
+  },
+  {
+   "fieldname": "is_group",
+   "fieldtype": "Check",
+   "label": "Group Chat",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "self_id",
+   "fieldtype": "Data",
+   "label": "Own Participant ID",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "parties",
+   "fieldtype": "Table",
+   "label": "Parties",
+   "options": "Chat Party",
+   "depends_on": "is_group"
+  },
+  {
+   "fieldname": "members",
+   "fieldtype": "Table",
+   "label": "Members",
+   "options": "Chat Member",
+   "depends_on": "is_group"
   },
   {
    "fieldname": "history_requested",

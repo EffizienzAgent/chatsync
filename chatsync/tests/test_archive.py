@@ -49,6 +49,22 @@ class TestArchive(ChatsyncTestCase):
 
 		return archive.archive_chat(self.chat, *args)
 
+	def test_group_archive_is_filed_under_its_first_party(self):
+		from docarchive.tests.factories import pdf
+
+		party = make_contact("party")
+		doc = frappe.get_doc("Chat", self.chat)
+		doc.update({"is_group": 1, "contact": None, "title": "Projekt Alpha"})
+		doc.append("parties", {"party_type": "Contact", "party": party})
+		doc.save(ignore_permissions=True)
+		with patch("chatsync.archive.render_pdf", return_value=pdf(b"transcript")) as render:
+			name = self.archive()
+		archived = frappe.get_doc("Business Document", name)
+		self.assertEqual((archived.source_party_type, archived.source_party_id), ("Contact", party))
+		self.assertEqual((archived.counterparty_type, archived.counterparty), ("Contact", party))
+		self.assertIn("Projekt Alpha", archived.title)
+		self.assertIn("Projekt Alpha", render.call_args.args[0])
+
 	def test_archive_creates_document_once(self):
 		from docarchive.tests.factories import pdf
 

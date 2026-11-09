@@ -8,11 +8,16 @@ from frappe.utils import cint, escape_html, now_datetime
 
 from chatsync import formatting, messages, networks, sync
 from chatsync.beeper import BeeperError
+from chatsync.extensions import group_parties
 from chatsync.matching import (
 	counterpart,
+	group_members,
+	is_group,
 	match_chat,
+	member_count,
 	name_index,
 	name_suggestion,
+	network_of,
 	phone_contacts,
 	phone_index,
 )
@@ -52,13 +57,29 @@ def beeper_call(function, *args):
 
 
 def direct_chat(client, beeper_chat_id: str):
-	raw = beeper_call(client.chat, beeper_chat_id)
+	return direct(beeper_call(client.chat, beeper_chat_id))
+
+
+def direct(raw: dict):
 	if is_merged(raw):
 		frappe.throw(frappe._("This is a merged Beeper chat, pick one of its chats instead."))
 	cp = counterpart(raw)
 	if not cp:
 		frappe.throw(frappe._("Only direct chats can be assigned"))
 	return raw, cp
+
+
+def listed_chat(client, beeper_chat_id: str):
+	"""A direct chat with its counterpart, or a group chat (counterpart None); merged chats are refused."""
+	raw = beeper_call(client.chat, beeper_chat_id)
+	return (raw, None) if is_group(raw) else direct(raw)
+
+
+def group_chat(client, beeper_chat_id: str) -> dict:
+	raw = beeper_call(client.chat, beeper_chat_id)
+	if not is_group(raw):
+		frappe.throw(frappe._("Only group chats can be assigned to parties."))
+	return beeper_call(sync.with_all_participants, client, raw)
 
 
 def summary(raw: dict, cp) -> dict:
@@ -138,11 +159,11 @@ def add_row(contact: str, values: dict) -> None:
 	).insert(ignore_permissions=True)
 
 
-def searched_members(client, member_client, query: str, limit: int = 20):
+def searched_members(client, member_client, query: str, limit: int = 20, kind: str = "single"):
 	"""Beeper's search hits (any age) with merged chats replaced by their members."""
 	cache: dict = {}
 	merged_left = MERGED_SEARCH_LIMIT
-	for found in client.search_chats(query, limit):
+	for found in client.search_chats(query, limit, kind):
 		if is_merged(found):
 			if not merged_left:
 				continue
@@ -163,11 +184,22 @@ def search_chats(query: str) -> list[dict]:
 
 
 def unassigned_items(account, raws, include_ignored: bool = False) -> list[dict]:
-	"""The direct chats among `raws` that no contact takes, with what could be assigned instead."""
+	"""The direct chats among `raws` that no contact takes, with what could be assigned instead, and the
+	group chats not stored yet, with the members' contacts and the parties they suggest."""
 	index, names = phone_index(), name_index()
 	ignored = ignored_chats(account.user)
+	excluded = excluded_groups(account.user)
+	stored = set(
+		frappe.get_all("Chat", filters={"account": account.name, "is_group": 1}, pluck="beeper_chat_id")
+	)
 	result = {}
 	for raw in raws:
+		if is_group(raw):
+			hidden = raw["id"] in ignored or raw["id"] in excluded
+			if raw["id"] in result or raw["id"] in stored or (hidden and not include_ignored):
+				continue
+			result[raw["id"]] = group_item(account, raw, index, names, hidden)
+			continue
 		cp = counterpart(raw)
 		if not cp or cp.beeper_chat_id in result:
 			continue
@@ -191,6 +223,47 @@ def unassigned_items(account, raws, include_ignored: bool = False) -> list[dict]
 			"suggested_contact_name": contact_name(suggested),
 		}
 	return list(result.values())
+
+
+def group_item(account, raw: dict, index: dict, names: dict, hidden: bool) -> dict:
+	members = group_members(account.user, raw, index, names)
+	contacts = [m["contact"] for m in members if m["contact"]]
+	for member in members:
+		member["contact_name"] = contact_name(member["contact"])
+	return {
+		"beeper_chat_id": raw["id"],
+		"network": network_of(raw),
+		"network_label": networks.label(network_of(raw)),
+		"title": raw.get("title"),
+		"phone": None,
+		"username": None,
+		"last_activity": raw.get("lastActivity"),
+		"avatar_url": avatar_endpoint(beeper_chat_id=raw["id"]) if avatar_source(raw) else None,
+		"is_group": True,
+		"member_count": member_count(raw),
+		"members": members,
+		"suggested_parties": suggested_parties(contacts),
+		"ambiguous": False,
+		"existing_contact": None,
+		"ignored": hidden,
+		"archived": bool(raw.get("isArchived")),
+		"needs_reply": waits_for_reply(raw),
+		"suggested_contact": None,
+		"suggested_contact_name": None,
+	}
+
+
+def suggested_parties(contacts: list[str]) -> list[dict]:
+	return [
+		{"party_type": party_type, "party": party, "title": party_title(party_type, party)}
+		for party_type, party in group_parties(contacts)
+		if frappe.db.exists(party_type, party) and frappe.has_permission(party_type, "read", doc=party)
+	]
+
+
+def party_title(party_type: str, party: str) -> str:
+	field = frappe.get_meta(party_type).title_field
+	return (field and frappe.db.get_value(party_type, party, field)) or party
 
 
 def waits_for_reply(raw: dict) -> bool:
@@ -225,7 +298,7 @@ def unassigned_page(cursor: str | None = None, query: str | None = None, include
 	member_client = sync.client_for(account, timeout=UNASSIGNED_TIMEOUT)
 	query = (query or "").strip()
 	if query:
-		raws = beeper_call(list, searched_members(client, member_client, query, INBOX_PAGE_SIZE))
+		raws = beeper_call(list, searched_members(client, member_client, query, INBOX_PAGE_SIZE, "any"))
 		next_cursor = None
 	else:
 		page, next_cursor = beeper_call(client.chats, cursor or None, INBOX_PAGE_SIZE)
@@ -239,6 +312,18 @@ def unassigned_page(cursor: str | None = None, query: str | None = None, include
 def ignored_chats(user: str | None = None) -> set[str]:
 	value = frappe.db.get_value("Chat Account", {"user": user or frappe.session.user}, "ignored_chats")
 	return set(json.loads(value or "[]"))
+
+
+def excluded_groups(user: str | None = None) -> set[str]:
+	"""Group chats that were unassigned; they are offered again only among ignored chats."""
+	value = frappe.db.get_value("Chat Account", {"user": user or frappe.session.user}, "excluded_groups")
+	return set(json.loads(value or "[]"))
+
+
+def store_excluded(account: str, excluded: set[str]) -> None:
+	frappe.db.set_value(
+		"Chat Account", account, "excluded_groups", json.dumps(sorted(excluded)), update_modified=False
+	)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -286,10 +371,71 @@ def assign(account, raw: dict, cp, contact: str) -> str:
 		},
 	)
 	chat = sync.ensure_chat(account, raw, cp, contact)
+	request_history(chat)
+	return chat
+
+
+ASSIGN_GROUP_COMMAND = "chatsync.api.assign_group"
+
+
+@frappe.whitelist(methods=["POST"])
+def assign_group(
+	beeper_chat_id: str, parties: str | list | None = None, contacts: str | list | None = None
+) -> str:
+	"""Stores a group chat by the user's explicit choice: attached to `parties` ([{party_type, party}])
+	and linking the members whose contacts are in `contacts`; imports its history.
+
+	Browser session only (no API token, no MCP): a group carries many third parties' messages, so it
+	is stored only after the user looked at it. Members' contacts get no Chat Identifier rows, so
+	matching of direct chats is unaffected.
+	"""
+	check_browser_session(ASSIGN_GROUP_COMMAND, frappe._("Only possible in a browser session."))
+	account = session_account()
+	parties = checked_parties(frappe.parse_json(parties) or [])
+	contacts = list(dict.fromkeys(frappe.parse_json(contacts) or []))
+	if not parties and not contacts:
+		frappe.throw(frappe._("Choose at least one party or member."))
+	for contact in contacts:
+		check_contact(contact)
+	raw = group_chat(sync.client_for(account), beeper_chat_id)
+	members = group_members(account.user, raw, phone_index(), name_index())
+	strangers = set(contacts) - {m["contact"] for m in members}
+	if strangers:
+		frappe.throw(
+			frappe._("Not a member of this group: {0}").format(
+				escape_html(", ".join(contact_name(c) for c in sorted(strangers)))
+			)
+		)
+	for member in members:
+		if member["contact"] not in contacts:
+			member["contact"] = None
+	chat = sync.ensure_group(account, raw, parties, members)
+	store_excluded(account.name, excluded_groups(account.user) - {beeper_chat_id})
+	request_history(chat)
+	return chat
+
+
+def checked_parties(parties: list) -> list[dict]:
+	result = {}
+	for party in parties:
+		party_type, name = party.get("party_type"), party.get("party")
+		if not (party_type and name and frappe.db.exists("DocType", party_type)):
+			frappe.throw(frappe._("Invalid party: {0}").format(escape_html(f"{party_type} {name}")))
+		if not frappe.db.exists(party_type, name):
+			frappe.throw(frappe._("{0} {1} not found").format(escape_html(party_type), escape_html(name)))
+		if not frappe.has_permission(party_type, "read", doc=name):
+			frappe.throw(
+				frappe._("No permission for {0} {1}").format(escape_html(party_type), escape_html(name)),
+				frappe.PermissionError,
+			)
+		result[(party_type, name)] = {"party_type": party_type, "party": name}
+	return list(result.values())
+
+
+def request_history(chat: str) -> None:
 	if not frappe.db.get_value("Chat", chat, "history_complete"):
 		frappe.db.set_value("Chat", chat, "history_requested", 1, update_modified=False)
 		sync.enqueue("chatsync.sync.import_history", f"chatsync-history-{chat}", chat=chat)
-	return chat
 
 
 @frappe.whitelist()
@@ -309,12 +455,18 @@ def create_contact_for_chat(beeper_chat_id: str) -> str:
 @frappe.whitelist()
 def unassign_chat(chat: str) -> None:
 	check_chat(chat, write=True)
-	beeper_chat_id, contact, network, identifier, title = frappe.db.get_value(
-		"Chat", chat, ["beeper_chat_id", "contact", "network", "counterpart_username", "title"]
+	beeper_chat_id, contact, network, identifier, title, group, account = frappe.db.get_value(
+		"Chat",
+		chat,
+		["beeper_chat_id", "contact", "network", "counterpart_username", "title", "is_group", "account"],
 	)
 	identifier = identifier or frappe.db.get_value("Chat", chat, "counterpart_id")
 	frappe.db.delete("Chat Message", {"chat": chat})
 	frappe.delete_doc("Chat", chat, ignore_permissions=True, force=True)
+	if group:
+		user = frappe.db.get_value("Chat Account", account, "user")
+		store_excluded(account, excluded_groups(user) | {beeper_chat_id})
+		return
 	if not contact:
 		return
 	drop_rows(beeper_chat_id, contact)
@@ -334,7 +486,9 @@ def unassign_chat(chat: str) -> None:
 def reassign_chat(chat: str, contact: str) -> str:
 	check_chat(chat, write=True)
 	check_contact(contact)
-	beeper_chat_id = frappe.db.get_value("Chat", chat, "beeper_chat_id")
+	beeper_chat_id, group = frappe.db.get_value("Chat", chat, ["beeper_chat_id", "is_group"])
+	if group:
+		frappe.throw(frappe._("A group chat belongs to parties, not to one contact."))
 	unassign_chat(chat)
 	return assign_chat(beeper_chat_id, contact)
 
@@ -346,6 +500,7 @@ MESSAGE_FIELDS = [
 	"sent_at",
 	"direction",
 	"sender_name",
+	"sender_id",
 	"kind",
 	"beeper_type",
 	"text",
@@ -400,11 +555,12 @@ def get_messages(chat: str, before: str | None = None, limit: int = 200) -> dict
 	rows = newest_first(chat, before, limit)
 	has_more = len(rows) > limit
 	rows = rows[:limit][::-1]
-	title, network, contact, archived, owner = frappe.db.get_value(
-		"Chat", chat, ["title", "network", "contact", "beeper_archived", "user"]
+	title, network, contact, archived, owner, group = frappe.db.get_value(
+		"Chat", chat, ["title", "network", "contact", "beeper_archived", "user", "is_group"]
 	)
 	return {
 		"chat": {
+			**(group_details(chat) if group else {"is_group": False}),
 			"archived": bool(archived),
 			"own": owner == frappe.session.user,
 			"title": title,
@@ -417,6 +573,29 @@ def get_messages(chat: str, before: str | None = None, limit: int = 200) -> dict
 		"messages": [serialize(r) for r in rows],
 		"has_more": has_more,
 		"archive_available": "docarchive" in frappe.get_installed_apps(),
+	}
+
+
+def group_details(chat: str) -> dict:
+	doc = frappe.get_doc("Chat", chat)
+	contacts = [m.contact for m in doc.members if m.contact]
+	names, images = contact_names(contacts), contact_images(contacts)
+	return {
+		"is_group": True,
+		"members": [
+			{
+				"participant_id": m.participant_id,
+				"display_name": m.display_name,
+				"contact": m.contact,
+				"contact_name": names.get(m.contact),
+				"avatar_url": images.get(m.contact),
+			}
+			for m in doc.members
+		],
+		"parties": [
+			{"party_type": p.party_type, "party": p.party, "title": party_title(p.party_type, p.party)}
+			for p in doc.parties
+		],
 	}
 
 
@@ -655,15 +834,16 @@ def preview_chat(beeper_chat_id: str, limit: int = 20) -> dict:
 	if frappe.db.exists("Chat", {"account": account.name, "beeper_chat_id": beeper_chat_id}):
 		frappe.throw(frappe._("This chat is already assigned, open it in the chat view."))
 	client = sync.client_for(account)
-	raw, cp = direct_chat(client, beeper_chat_id)
+	raw, cp = listed_chat(client, beeper_chat_id)
 	items, _cursor = beeper_call(client.messages, beeper_chat_id)
 	shown = sorted(filter(messages.is_shown, items), key=lambda m: messages.sort_order(m.get("sortKey")))
 	return {
 		"beeper_chat_id": beeper_chat_id,
 		"title": raw.get("title"),
-		"network": cp.network,
-		"network_label": networks.label(cp.network),
-		"avatar_url": summary(raw, cp)["avatar_url"],
+		"is_group": cp is None,
+		"network": network_of(raw),
+		"network_label": networks.label(network_of(raw)),
+		"avatar_url": avatar_endpoint(beeper_chat_id=beeper_chat_id) if avatar_source(raw) else None,
 		"messages": [messages.preview(m) for m in shown[-limit:]],
 	}
 
@@ -674,7 +854,16 @@ def get_conversations() -> list[dict]:
 	chats = frappe.get_list(
 		"Chat",
 		filters={"user": frappe.session.user},
-		fields=["name", "network", "title", "contact", "last_message_at", "creation", "beeper_archived"],
+		fields=[
+			"name",
+			"network",
+			"title",
+			"contact",
+			"last_message_at",
+			"creation",
+			"beeper_archived",
+			"is_group",
+		],
 		limit_page_length=0,
 	)
 	groups: dict[str, list] = {}
@@ -700,6 +889,7 @@ def get_conversations() -> list[dict]:
 				"key": key,
 				"contact": contact,
 				"chat": None if contact else key,
+				"is_group": bool(members[0].is_group),
 				"title": names.get(contact) or members[0].title or key,
 				"networks": sorted({networks.label(c.network) for c in members}),
 				"last_message_at": last.get("sent_at")
@@ -744,6 +934,7 @@ OPEN_CHAT_FIELDS = [
 	"last_outgoing_at",
 	"unread_count",
 	"creation",
+	"is_group",
 ]
 
 
@@ -771,7 +962,7 @@ def set_chat_done(chat: str | None = None, beeper_chat_id: str | None = None, do
 		doc = session_account()
 		account = doc.name
 		client = sync.client_for(doc)
-		direct_chat(client, beeper_chat_id)
+		listed_chat(client, beeper_chat_id)
 	beeper_call(client.archive, beeper_chat_id, done)
 	stored = frappe.db.get_value("Chat", {"account": account, "beeper_chat_id": beeper_chat_id})
 	if stored:
@@ -850,6 +1041,7 @@ def open_row(members: list, names: dict, images: dict) -> dict:
 		"chat": reply_to.name,
 		"chats": [c.name for c in members],
 		"contact": contact,
+		"is_group": bool(members[0].is_group),
 		"contact_name": names.get(contact) or members[0].title or members[0].name,
 		"networks": sorted({networks.label(c.network) for c in members}),
 		"last_activity": max((c.last_message_at for c in members if c.last_message_at), default=None),

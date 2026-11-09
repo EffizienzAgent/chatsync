@@ -16,8 +16,12 @@ class AssignmentBeeper(FakeBeeper):
 	def chat(self, chat_id):
 		return next(c for c in self.chat_items if c["id"] == chat_id)
 
-	def search_chats(self, query, limit=20):
-		return [c for c in self.chat_items if query.lower() in c["title"].lower()]
+	def search_chats(self, query, limit=20, kind="single"):
+		return [
+			c
+			for c in self.chat_items
+			if query.lower() in c["title"].lower() and (kind == "any" or c.get("type") != "group")
+		]
 
 
 class TestAssignment(ChatsyncTestCase):
@@ -102,7 +106,7 @@ class TestAssignment(ChatsyncTestCase):
 		sync.sync_account(self.account.name)
 		self.assertEqual(frappe.db.get_value("Chat", {"beeper_chat_id": chat["id"]}, "contact"), second)
 
-	def test_unassigned_lists_only_unmatched_direct_chats(self):
+	def test_unassigned_lists_unmatched_direct_chats_and_groups(self):
 		matched = chat_json(self.number)
 		make_contact(phones=[self.number])
 		free = chat_json(f"+4916{int(tag()[:7], 16) % 10**8:08d}")
@@ -117,7 +121,8 @@ class TestAssignment(ChatsyncTestCase):
 		self.use(matched, free, group, ambiguous, excluded, old)
 		before = frappe.db.count("Chat")
 		result = {r["beeper_chat_id"]: r for r in api.unassigned_chats(days=14)}
-		self.assertEqual(set(result), {free["id"], ambiguous["id"]})
+		self.assertEqual(set(result), {free["id"], ambiguous["id"], group["id"]})
+		self.assertTrue(result[group["id"]]["is_group"])
 		self.assertTrue(result[ambiguous["id"]]["ambiguous"])
 		self.assertFalse(result[free["id"]]["ambiguous"])
 		self.assertEqual(frappe.db.count("Chat"), before)

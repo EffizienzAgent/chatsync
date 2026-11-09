@@ -3,8 +3,9 @@ from unittest.mock import patch
 import frappe
 from frappe.utils import add_to_date, get_datetime, now_datetime
 
-from chatsync import api, sync
+from chatsync import api, merges, sync
 from chatsync.messages import to_site_time
+from chatsync.patches.v0_6 import backfill_chat_activity
 from chatsync.tests.helpers import ChatsyncTestCase, tag, use_hooks
 from chatsync.tests.test_assignment import AssignmentBeeper
 from chatsync.tests.test_chat_view import fake_request
@@ -324,3 +325,103 @@ class TestChatViewState(OpenChatsCase):
 		self.assertTrue(api.get_contact_messages(contact)["chats"][0]["archived"])
 		(row,) = [r for r in api.get_conversations() if r["contact"] == contact]
 		self.assertTrue(row["archived"])
+
+
+class TestReviewFixes(OpenChatsCase):
+	def test_listed_member_takes_the_merged_chats_state_or_is_left_out(self):
+		parent = {**chat_json(), "isArchived": True}
+		member = {**chat_json(), "isArchived": False, "mergedIntoChatID": parent["id"]}
+		parent["merge"] = {"chatIDs": [member["id"]]}
+		self.assertTrue(merges.listed_states([parent, member])[member["id"]]["archived"])
+		self.assertTrue(merges.listed_states([member, parent])[member["id"]]["archived"])
+		self.assertNotIn(member["id"], merges.listed_states([member]))
+
+	def test_backfill_patch_sets_last_directions(self):
+		phone = number()
+		contact = make_contact(phones=[phone])
+		raw = chat_json(phone)
+		self.use(ArchivingBeeper([raw]))
+		chat = api.assign_chat(raw["id"], contact)
+		from chatsync.messages import upsert
+
+		upsert(chat, message(raw["id"], 2, "in"))
+		upsert(chat, message(raw["id"], 1, "out", isSender=True))
+		frappe.db.set_value("Chat", chat, {"last_incoming_at": None, "last_outgoing_at": None})
+		backfill_chat_activity.execute()
+		row = frappe.db.get_value("Chat", chat, ["last_incoming_at", "last_outgoing_at"], as_dict=True)
+		self.assertTrue(row.last_incoming_at < row.last_outgoing_at)
+		self.assertEqual(
+			row.last_outgoing_at,
+			frappe.db.get_value("Chat Message", {"chat": chat, "direction": "Out"}, "sent_at"),
+		)
+
+	def test_answer_in_another_network_counts_for_the_contact(self):
+		self.use(ArchivingBeeper([]))
+		contact = make_contact(phones=[number()])
+		for network, values in (
+			("whatsapp", {"last_incoming_at": "2026-11-09 10:00", "last_message_at": "2026-11-09 10:00"}),
+			("signal", {"last_outgoing_at": "2026-11-09 11:00", "last_message_at": "2026-11-09 11:00"}),
+		):
+			raw = {**chat_json(number("16")), "accountID": network}
+			self.fake_add(raw)
+			chat = api.assign_chat(raw["id"], contact)
+			frappe.db.set_value("Chat", chat, values)
+		(row,) = api.open_assigned_chats(USER)
+		self.assertFalse(row["needs_reply"])
+		self.assertEqual(api.open_chat_counts(USER), {"open": 1, "waiting": 0})
+
+	def test_counts_and_limit(self):
+		self.use(ArchivingBeeper([]))
+		for i, incoming in enumerate(["2026-11-09 10:00", None, "2026-11-09 09:00"]):
+			raw = chat_json(number(str(15 + i)))
+			self.fake_add(raw)
+			chat = api.assign_chat(raw["id"], make_contact(phones=[number()]))
+			frappe.db.set_value("Chat", chat, {"last_incoming_at": incoming, "last_message_at": incoming})
+		self.assertEqual(api.open_chat_counts(USER), {"open": 3, "waiting": 2})
+		rows = api.open_assigned_chats(USER, limit=2)
+		self.assertEqual([r["needs_reply"] for r in rows], [True, True])
+		self.assertEqual(api.open_chat_counts("Guest"), {"open": 0, "waiting": 0})
+
+	def test_single_checks_are_capped_oldest_first(self):
+		phones = [number(), number("16")]
+		raws = [{**chat_json(p), "isArchived": False} for p in phones]
+		for p in phones:
+			make_contact(phones=[p])
+		fake = self.use(ArchivingBeeper(raws, {}))
+		sync.sync_account(self.account.name)
+		for raw, minutes in zip(raws, (20, 60), strict=True):
+			frappe.db.set_value(
+				"Chat",
+				{"beeper_chat_id": raw["id"]},
+				"beeper_state_checked_at",
+				add_to_date(now_datetime(), minutes=-minutes),
+			)
+		fake.chats = lambda cursor=None: ([], None)
+		fake.fetched.clear()
+		with patch.object(sync, "STATE_CHECKS_PER_RUN", 1):
+			sync.sync_account(self.account.name)
+		self.assertEqual(fake.fetched, [raws[1]["id"]])
+
+	def test_unchanged_state_is_not_written_again(self):
+		phone = number()
+		make_contact(phones=[phone])
+		raw = {**chat_json(phone), "isArchived": False}
+		self.use(ArchivingBeeper([raw], {raw["id"]: [[message(raw["id"], 0)]]}))
+		sync.sync_account(self.account.name)
+		checked = self.stored(raw).beeper_state_checked_at
+		with patch.object(frappe.db, "set_value", wraps=frappe.db.set_value) as writes:
+			sync.store_state(self.stored(raw), False, raw.get("unreadCount") or 0)
+		writes.assert_not_called()
+		self.assertEqual(self.stored(raw).beeper_state_checked_at, checked)
+
+	def test_messages_say_whether_the_chat_is_the_users_own(self):
+		phone = number()
+		raw = chat_json(phone)
+		self.use(ArchivingBeeper([raw]))
+		chat = api.assign_chat(raw["id"], make_contact(phones=[phone]))
+		self.assertTrue(api.get_messages(chat)["chat"]["own"])
+		frappe.db.set_value("Chat", chat, "user", make_user("notmine", ["Chat User"]))
+		self.assertFalse(api.get_messages(chat)["chat"]["own"])
+
+	def fake_add(self, raw):
+		sync.BeeperClient().chat_items.append(raw)

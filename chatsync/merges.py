@@ -56,9 +56,12 @@ def expand(client, raw: dict, cache: dict | None = None) -> list[dict]:
 
 def listed_states(items: list[dict]) -> dict[str, dict]:
 	"""Archive state (and unread count, unless a merged chat stands for it) by chat ID, from a chat list page.
-	A merged chat's members are listed under their own IDs with the merged chat's archive state."""
+	A merged chat's members are listed under their own IDs with the merged chat's archive state; a
+	member on the page without its merged chat is left out (merges.archived resolves it)."""
 	states: dict[str, dict] = {}
 	for raw in items:
+		if raw.get("mergedIntoChatID"):
+			continue
 		state = {"archived": bool(raw.get("isArchived")), "unread_count": None}
 		if is_merged(raw):
 			for chat_id in member_ids(raw):

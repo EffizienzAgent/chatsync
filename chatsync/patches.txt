@@ -1,3 +1,4 @@
 [pre_model_sync]
 
 [post_model_sync]
+chatsync.patches.v0_6.backfill_chat_activity

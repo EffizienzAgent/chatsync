@@ -400,12 +400,13 @@ def get_messages(chat: str, before: str | None = None, limit: int = 200) -> dict
 	rows = newest_first(chat, before, limit)
 	has_more = len(rows) > limit
 	rows = rows[:limit][::-1]
-	title, network, contact, archived = frappe.db.get_value(
-		"Chat", chat, ["title", "network", "contact", "beeper_archived"]
+	title, network, contact, archived, owner = frappe.db.get_value(
+		"Chat", chat, ["title", "network", "contact", "beeper_archived", "user"]
 	)
 	return {
 		"chat": {
 			"archived": bool(archived),
+			"own": owner == frappe.session.user,
 			"title": title,
 			"network": network,
 			"network_label": networks.label(network),
@@ -781,23 +782,50 @@ def set_chat_done(chat: str | None = None, beeper_chat_id: str | None = None, do
 	return {"chat": chat, "beeper_chat_id": beeper_chat_id, "done": done}
 
 
-def needs_reply(chat) -> bool:
-	return bool(chat.last_incoming_at) and (
-		not chat.last_outgoing_at or chat.last_incoming_at > chat.last_outgoing_at
-	)
+def waiting(last_incoming_at, last_outgoing_at) -> bool:
+	"""The newest message in any of a contact's chats came in: an answer in another network counts."""
+	return bool(last_incoming_at) and (not last_outgoing_at or last_incoming_at > last_outgoing_at)
 
 
-def open_assigned_chats(user: str | None = None) -> list[dict]:
-	"""The user's stored chats not archived in Beeper, one row per contact; waiting ones first."""
-	user = user or frappe.session.user
+def open_filters(user: str) -> dict | None:
 	accounts = frappe.get_all("Chat Account", filters={"user": user, "enabled": 1}, pluck="name")
 	if not accounts:
+		return None
+	return {"user": user, "account": ["in", accounts], "beeper_archived": 0}
+
+
+def open_chat_counts(user: str | None = None) -> dict:
+	"""Open rows (contacts, else chats) and those waiting for a reply, in one query: for badges."""
+	filters = open_filters(user or frappe.session.user)
+	if not filters:
+		return {"open": 0, "waiting": 0}
+	table = frappe.qb.DocType("Chat")
+	key = frappe.qb.functions("COALESCE", table.contact, table.name)
+	rows = (
+		frappe.qb.from_(table)
+		.select(
+			frappe.qb.functions("MAX", table.last_incoming_at),
+			frappe.qb.functions("MAX", table.last_outgoing_at),
+		)
+		.where(
+			(table.user == filters["user"])
+			& table.account.isin(filters["account"][1])
+			& (table.beeper_archived == 0)
+		)
+		.groupby(key)
+		.run()
+	)
+	return {"open": len(rows), "waiting": sum(waiting(i, o) for i, o in rows)}
+
+
+def open_assigned_chats(user: str | None = None, limit: int | None = None) -> list[dict]:
+	"""The user's stored chats not archived in Beeper, one row per contact; waiting ones first.
+	Previews are read for the returned rows only."""
+	filters = open_filters(user or frappe.session.user)
+	if not filters:
 		return []
 	chats = frappe.get_all(
-		"Chat",
-		filters={"user": user, "account": ["in", accounts], "beeper_archived": 0},
-		fields=OPEN_CHAT_FIELDS,
-		order_by="last_message_at desc, creation desc",
+		"Chat", filters=filters, fields=OPEN_CHAT_FIELDS, order_by="last_message_at desc, creation desc"
 	)
 	groups: dict[str, list] = {}
 	for chat in chats:
@@ -805,14 +833,19 @@ def open_assigned_chats(user: str | None = None) -> list[dict]:
 	contacts = [c.contact for c in chats if c.contact]
 	names, images = contact_names(contacts), contact_images(contacts)
 	rows = [open_row(members, names, images) for members in groups.values()]
-	return sorted(rows, key=lambda r: (r["needs_reply"], str(r["last_activity"] or "")), reverse=True)
+	rows.sort(key=lambda r: (r["needs_reply"], str(r["last_activity"] or "")), reverse=True)
+	rows = rows[:limit] if limit else rows
+	for row in rows:
+		last = newest_message(row["chats"])
+		row["preview"] = messages.summary_text(last) if last else ""
+		row["direction"] = last.get("direction") if last else None
+	return rows
 
 
 def open_row(members: list, names: dict, images: dict) -> dict:
-	waiting = [c for c in members if needs_reply(c)]
 	incoming = [c for c in members if c.last_incoming_at]
 	reply_to = max(incoming, key=lambda c: c.last_incoming_at) if incoming else members[0]
-	last = newest_message([c.name for c in members])
+	last_out = max((c.last_outgoing_at for c in members if c.last_outgoing_at), default=None)
 	contact = members[0].contact
 	return {
 		"chat": reply_to.name,
@@ -820,11 +853,9 @@ def open_row(members: list, names: dict, images: dict) -> dict:
 		"contact": contact,
 		"contact_name": names.get(contact) or members[0].title or members[0].name,
 		"networks": sorted({networks.label(c.network) for c in members}),
-		"preview": messages.summary_text(last) if last else "",
-		"direction": last.get("direction") if last else None,
 		"last_activity": max((c.last_message_at for c in members if c.last_message_at), default=None),
 		"last_incoming_at": reply_to.last_incoming_at,
-		"needs_reply": bool(waiting),
+		"needs_reply": waiting(reply_to.last_incoming_at, last_out),
 		"unread_count": sum(c.unread_count or 0 for c in members),
 		"avatar_url": avatar_url(None, newest_chat(members), images.get(contact)),
 	}

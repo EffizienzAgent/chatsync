@@ -477,6 +477,7 @@ class ChatView extends chatsync.ui.ChatPane {
 			const data = r.message;
 			if (data.chat.contact) return this.open_contact(data.chat.contact, { day, select: chat });
 			this.mode = "chat";
+			this.own = data.chat.own;
 			this.key = chat;
 			this.contact = null;
 			this.chats = [
@@ -501,6 +502,7 @@ class ChatView extends chatsync.ui.ChatPane {
 			if (ticket !== this.ticket) return;
 			const data = r.message;
 			this.mode = "contact";
+			this.own = true;
 			this.key = contact;
 			this.contact = contact;
 			this.chats = data.chats;

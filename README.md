@@ -30,7 +30,8 @@ networks Beeper bridges end up in one place.
   effect in Beeper at once. Archiving or unarchiving in Beeper shows up with the next sync (every
   two minutes). Chats without new activity take their state from the chat list pages the sync
   reads anyway; open chats not on those pages are asked for one by one, each at most every ten
-  minutes. A chat
+  minutes and at most 20 per sync. A contact counts as waiting for a reply when the newest message
+  across all its chats came in. A chat
   that is part of a merged Beeper chat counts as archived with the merged chat, and *Done* archives
   the merged chat, since that is what Beeper's inbox shows. Each chat also keeps its unread count
   and when the last message came in and went out, so apps can show chats waiting for a reply

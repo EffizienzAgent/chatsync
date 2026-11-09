@@ -183,7 +183,7 @@ class ChatPane {
 	}
 
 	can_react(message) {
-		return ["chat", "contact"].includes(this.mode) && Boolean(message.chat);
+		return ["chat", "contact"].includes(this.mode) && this.own !== false && Boolean(message.chat);
 	}
 
 	reaction_chips(message) {

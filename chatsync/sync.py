@@ -10,6 +10,8 @@ from chatsync.messages import sort_order, to_site_time, upsert
 
 EDIT_WINDOW_DAYS = 2
 STATE_CHECK_MINUTES = 10
+STATE_CHECKS_PER_RUN = 20
+STATE_FIELDS = ["name", "beeper_chat_id", "beeper_archived", "unread_count", "beeper_state_checked_at"]
 
 
 def client_for(account, timeout: int | None = None) -> BeeperClient:
@@ -96,7 +98,8 @@ def sync_account(account: str) -> None:
 			try:
 				chat = ensure_chat(doc, raw, cp, found.contact)
 				sync_chat(client, chat, started, days)
-				store_state(chat, archived(client, raw, members), raw.get("unreadCount") or 0)
+				current = frappe.db.get_value("Chat", chat, STATE_FIELDS, as_dict=True)
+				store_state(current, archived(client, raw, members), raw.get("unreadCount") or 0)
 				seen.add(chat)
 			except BeeperAuthError:
 				raise
@@ -126,31 +129,46 @@ def sync_account(account: str) -> None:
 	commit()
 
 
-def store_state(chat: str, is_archived: bool, unread_count: int | None = None) -> None:
-	values = {"beeper_archived": int(is_archived), "beeper_state_checked_at": now_datetime()}
-	if unread_count is not None:
+def state_stale(checked_at) -> bool:
+	return not checked_at or get_datetime(checked_at) <= now_datetime() - timedelta(
+		minutes=STATE_CHECK_MINUTES
+	)
+
+
+def store_state(current, is_archived: bool, unread_count: int | None = None) -> None:
+	"""Writes only what changed; the check time only when it is due, so it throttles single checks."""
+	values = {}
+	if bool(current.beeper_archived) != bool(is_archived):
+		values["beeper_archived"] = int(is_archived)
+	if unread_count is not None and (current.unread_count or 0) != unread_count:
 		values["unread_count"] = unread_count
-	frappe.db.set_value("Chat", chat, values, update_modified=False)
+	if state_stale(current.beeper_state_checked_at):
+		values["beeper_state_checked_at"] = now_datetime()
+	if values:
+		frappe.db.set_value("Chat", current.name, values, update_modified=False)
 
 
 def refresh_unwalked(client: BeeperClient, account: str, seen: set[str], cache: dict, listed: dict) -> None:
 	"""Chats can be archived in Beeper without new activity. Stored chats the walk did not sync take their
 	state from the chat list pages already fetched; open ones not listed there are asked for, each at most
-	every STATE_CHECK_MINUTES."""
-	stale = now_datetime() - timedelta(minutes=STATE_CHECK_MINUTES)
+	every STATE_CHECK_MINUTES and at most STATE_CHECKS_PER_RUN per run, the longest unchecked first."""
 	rows = frappe.get_all(
 		"Chat",
 		filters={"account": account, "name": ["not in", list(seen) or [""]]},
 		or_filters={"beeper_archived": 0, "beeper_chat_id": ["in", list(listed) or [""]]},
-		fields=["name", "beeper_chat_id", "beeper_state_checked_at"],
+		fields=STATE_FIELDS,
 	)
+	due = []
 	for row in rows:
 		if row.beeper_chat_id in listed:
 			state = listed[row.beeper_chat_id]
-			store_state(row.name, state["archived"], state["unread_count"])
-			continue
-		if row.beeper_state_checked_at and get_datetime(row.beeper_state_checked_at) > stale:
-			continue
+			store_state(row, state["archived"], state["unread_count"])
+		elif state_stale(row.beeper_state_checked_at):
+			due.append(row)
+	due.sort(
+		key=lambda r: get_datetime(r.beeper_state_checked_at) if r.beeper_state_checked_at else datetime.min
+	)
+	for row in due[:STATE_CHECKS_PER_RUN]:
 		try:
 			raw = client.chat(row.beeper_chat_id)
 		except BeeperAuthError:
@@ -158,7 +176,7 @@ def refresh_unwalked(client: BeeperClient, account: str, seen: set[str], cache: 
 		except BeeperError as e:
 			frappe.logger("chatsync").warning(f"State of chat {row.beeper_chat_id} could not be loaded: {e}")
 			continue
-		store_state(row.name, archived(client, raw, cache), raw.get("unreadCount") or 0)
+		store_state(row, archived(client, raw, cache), raw.get("unreadCount") or 0)
 	commit()
 
 

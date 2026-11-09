@@ -179,7 +179,7 @@ class ChatView extends chatsync.ui.ChatPane {
 		$(`<span class="chat-row-time"></span>`).text(this.short_time(local_time(item.last_activity))).appendTo($top);
 		const $bottom = $(`<div class="chat-row-bottom"></div>`).appendTo($text);
 		const line = item.is_group ? group_summary(item) : item.phone || item.username || "";
-		$(`<span class="chat-row-preview"></span>`).attr("title", line).text(line).appendTo($bottom);
+		$(`<span class="chat-row-preview"></span>`).toggleClass("chat-group-summary", Boolean(item.is_group)).text(line).appendTo($bottom);
 		const $networks = $(`<span class="chat-row-networks"></span>`).appendTo($bottom);
 		network_chip(item.network_label).appendTo($networks);
 		const $badges = $(`<div class="chat-row-badges"></div>`);

@@ -21,8 +21,22 @@ networks Beeper bridges end up in one place.
 - **Conversations.** *Chat Sync → Conversations* (`/desk/chat-view`) lists your conversations,
   newest first, with search. All chats with one contact (WhatsApp, Signal, LinkedIn, …) show as one
   conversation, each message marked with its network; replies go to the chat chosen next to the
-  input (by default the one the contact last wrote in). On small screens list and conversation
-  show one at a time.
+  input (by default the one the contact last wrote in). Conversations that are done (archived in
+  Beeper) are shown muted; *Only open* hides them. On small screens list and conversation show one
+  at a time.
+- **Open and done.** Beeper's archive state is the single source of truth for what is open, kept
+  in sync both ways. *Done* in the conversation header archives the chat in Beeper (all open chats
+  of the contact), *Reopen* moves the chat chosen for replies back to the Beeper inbox; both take
+  effect in Beeper at once. Archiving or unarchiving in Beeper shows up with the next sync (every
+  two minutes; chats without new activity are asked for one by one while they are open). A chat
+  that is part of a merged Beeper chat counts as archived with the merged chat, and *Done* archives
+  the merged chat, since that is what Beeper's inbox shows. Each chat also keeps its unread count
+  and when the last message came in and went out, so apps can show chats waiting for a reply
+  (`chatsync.api.open_assigned_chats`, one row per contact, waiting ones first).
+- **Reactions.** Reactions show as chips under the message (yours highlighted, "You" or the
+  contact's name on hover; shortcodes and custom reactions as text, their images are not loaded).
+  Hovering a message offers 👍 ❤️ 😂 😮 😢 🙏 and removing your own reaction; the other person sees
+  it at once. Reactions of the last two days are updated with every sync.
 - **From the contact.** The **Chat** button in the contact's activity opens a quick reply: the
   latest ten messages of the conversation, a composer with the network to send through, and
   *Open in chat* for the full view. When there is no chat yet, it starts a WhatsApp or Signal chat
@@ -109,7 +123,9 @@ The scheduler syncs every two minutes. Token and transcription keys are stored a
   *Load more* for older ones; a search term uses Beeper's chat search over all ages). Nothing is
   stored. Clicking an entry previews it with the actions *Assign contact*, *Create contact* and
   *Ignore*; *Show ignored* includes ignored chats, which can be brought back with *Stop ignoring*
-  (`chatsync.api.unignore_chat`).
+  (`chatsync.api.unignore_chat`). Entries carry `archived` (Beeper's archive state) and
+  `needs_reply`; an unassigned chat can be archived without assigning it
+  (`chatsync.api.set_chat_done` with `beeper_chat_id`).
 - Chats without a phone match (LinkedIn, Instagram, Telegram, …) get a `suggested_contact` when
   exactly one readable contact has the chat title as its full name (case, diacritics, punctuation
   and emoji ignored; "Last, First" counts as "First Last"; single words are not suggested). It is a
@@ -138,9 +154,10 @@ What gets imported:
   (no File record, nothing on disk). Only their name, type and size are saved with the message, and
   for voice notes the transcript. Messages synced before these details were kept show their first
   attachment without name and size.
-- Sending, and starting a chat from a contact, are possible only in a browser session. Requests that carry an
+- Sending, reacting, marking a chat done (archiving it in Beeper) and starting a chat from a
+  contact are possible only in a browser session, for the chat's owner. Requests that carry an
   `Authorization` header (API keys, OAuth), and requests without the session's CSRF token, are
-  refused, and there is no background or MCP path to send. Starting a chat sends no message.
+  refused, and there is no background or MCP path for them. Starting a chat sends no message.
 - Transcription sends the audio to Mistral (*Chat Sync Settings* → provider, API key and model).
   Leave the key empty to switch it off.
 - Archiving needs a docarchive role; the PDF contains the messages of the chosen period, with

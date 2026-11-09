@@ -1,7 +1,8 @@
 # Extending chatsync
 
 chatsync works on a plain Frappe site. An app that has its own idea of which contacts are
-relevant plugs in through one hook. The last installed app that sets it wins.
+relevant plugs in through a hook (the last installed app that sets it wins); apps that cache chat
+lists can follow chats being marked done.
 
 ```python
 # my_app/hooks.py
@@ -35,6 +36,18 @@ The filter does not apply to chats assigned by hand ("Assign chat" on the Contac
 chat's owner cannot read are excluded by a separate permission check, independent of the filter.
 
 The function runs for each candidate contact whenever a chat is matched by phone number, so keep it cheap.
+
+## Chat done: `chatsync_chat_done`
+
+A list of dotted paths to functions `on_done(user, beeper_chat_id, done)`, called after
+`chatsync.api.set_chat_done` archived (`done=True`) or unarchived (`done=False`) a chat in Beeper.
+Apps that cache chat lists (for example unassigned chats, which are never stored) update them here
+so the change shows at once.
+
+```python
+# my_app/hooks.py
+chatsync_chat_done = ["my_app.chat.on_done"]
+```
 
 ## Settings
 

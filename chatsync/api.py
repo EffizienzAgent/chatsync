@@ -8,7 +8,7 @@ from frappe.utils import cint, escape_html, now_datetime
 
 from chatsync import formatting, messages, networks, sync
 from chatsync.beeper import BeeperError
-from chatsync.extensions import group_parties
+from chatsync.extensions import group_parties, group_party_type
 from chatsync.matching import (
 	counterpart,
 	group_members,
@@ -226,10 +226,7 @@ def unassigned_items(account, raws, include_ignored: bool = False) -> list[dict]
 
 
 def group_item(account, raw: dict, index: dict, names: dict, hidden: bool) -> dict:
-	members = group_members(account.user, raw, index, names)
-	contacts = [m["contact"] for m in members if m["contact"]]
-	for member in members:
-		member["contact_name"] = contact_name(member["contact"])
+	members, parties = members_and_parties(account.user, raw, index, names)
 	return {
 		"beeper_chat_id": raw["id"],
 		"network": network_of(raw),
@@ -242,7 +239,7 @@ def group_item(account, raw: dict, index: dict, names: dict, hidden: bool) -> di
 		"is_group": True,
 		"member_count": member_count(raw),
 		"members": members,
-		"suggested_parties": suggested_parties(contacts),
+		"suggested_parties": parties,
 		"ambiguous": False,
 		"existing_contact": None,
 		"ignored": hidden,
@@ -253,12 +250,50 @@ def group_item(account, raw: dict, index: dict, names: dict, hidden: bool) -> di
 	}
 
 
+def members_and_parties(user: str, raw: dict, index: dict, names: dict) -> tuple[list[dict], list[dict]]:
+	"""Members with their contact (`by_name`: a full-name suggestion only) and the parties the
+	contacts matched by identifier or phone suggest."""
+	members = group_members(user, raw, index, names)
+	for member in members:
+		member["contact_name"] = contact_name(member["contact"])
+	contacts = [m["contact"] for m in members if m["contact"] and not m["by_name"]]
+	return members, suggested_parties(contacts)
+
+
 def suggested_parties(contacts: list[str]) -> list[dict]:
 	return [
 		{"party_type": party_type, "party": party, "title": party_title(party_type, party)}
 		for party_type, party in group_parties(contacts)
-		if frappe.db.exists(party_type, party) and frappe.has_permission(party_type, "read", doc=party)
+		if party_type_allowed(party_type)
+		and frappe.db.exists(party_type, party)
+		and frappe.has_permission(party_type, "read", doc=party)
 	]
+
+
+def party_type_allowed(party_type: str) -> bool:
+	"""Only the host's `chatsync_group_party_type` when set; never child tables or single DocTypes."""
+	if not (party_type and frappe.db.exists("DocType", party_type)):
+		return False
+	allowed = group_party_type()
+	if allowed and party_type != allowed:
+		return False
+	meta = frappe.get_meta(party_type)
+	return not (meta.istable or meta.issingle)
+
+
+@frappe.whitelist(methods=["GET"])
+def group_for_assignment(beeper_chat_id: str) -> dict:
+	"""An unassigned group with all its participants (not only the first page) for the assign dialog."""
+	account = session_account()
+	raw = group_chat(sync.client_for(account), beeper_chat_id)
+	members, parties = members_and_parties(account.user, raw, phone_index(), name_index())
+	return {
+		"beeper_chat_id": raw["id"],
+		"title": raw.get("title"),
+		"member_count": member_count(raw),
+		"members": members,
+		"suggested_parties": parties,
+	}
 
 
 def party_title(party_type: str, party: str) -> str:
@@ -380,10 +415,16 @@ ASSIGN_GROUP_COMMAND = "chatsync.api.assign_group"
 
 @frappe.whitelist(methods=["POST"])
 def assign_group(
-	beeper_chat_id: str, parties: str | list | None = None, contacts: str | list | None = None
+	beeper_chat_id: str,
+	parties: str | list | None = None,
+	contacts: str | list | None = None,
+	offered: str | list | None = None,
 ) -> str:
 	"""Stores a group chat by the user's explicit choice: attached to `parties` ([{party_type, party}])
 	and linking the members whose contacts are in `contacts`; imports its history.
+
+	`offered` lists the participant IDs the dialog showed: only those follow `contacts`. Members the
+	user was not shown keep a contact matched by identifier or phone (never one found by name).
 
 	Browser session only (no API token, no MCP): a group carries many third parties' messages, so it
 	is stored only after the user looked at it. Members' contacts get no Chat Identifier rows, so
@@ -393,6 +434,7 @@ def assign_group(
 	account = session_account()
 	parties = checked_parties(frappe.parse_json(parties) or [])
 	contacts = list(dict.fromkeys(frappe.parse_json(contacts) or []))
+	offered = None if offered is None else set(frappe.parse_json(offered) or [])
 	if not parties and not contacts:
 		frappe.throw(frappe._("Choose at least one party or member."))
 	for contact in contacts:
@@ -407,19 +449,25 @@ def assign_group(
 			)
 		)
 	for member in members:
-		if member["contact"] not in contacts:
+		shown = offered is None or member["participant_id"] in offered
+		keep = member["contact"] in contacts if shown else not member["by_name"]
+		if not keep:
 			member["contact"] = None
-	chat = sync.ensure_group(account, raw, parties, members)
+	chat = sync.ensure_group(account, raw, parties, [member_row_of(m) for m in members])
 	store_excluded(account.name, excluded_groups(account.user) - {beeper_chat_id})
 	request_history(chat)
 	return chat
+
+
+def member_row_of(member: dict) -> dict:
+	return {key: member[key] for key in sync.MEMBER_FIELDS}
 
 
 def checked_parties(parties: list) -> list[dict]:
 	result = {}
 	for party in parties:
 		party_type, name = party.get("party_type"), party.get("party")
-		if not (party_type and name and frappe.db.exists("DocType", party_type)):
+		if not (party_type and name and party_type_allowed(party_type)):
 			frappe.throw(frappe._("Invalid party: {0}").format(escape_html(f"{party_type} {name}")))
 		if not frappe.db.exists(party_type, name):
 			frappe.throw(frappe._("{0} {1} not found").format(escape_html(party_type), escape_html(name)))
@@ -593,8 +641,8 @@ def group_details(chat: str) -> dict:
 			for m in doc.members
 		],
 		"parties": [
-			{"party_type": p.party_type, "party": p.party, "title": party_title(p.party_type, p.party)}
-			for p in doc.parties
+			{"party_type": party_type, "party": party, "title": party_title(party_type, party)}
+			for party_type, party in dict.fromkeys((p.party_type, p.party) for p in doc.parties)
 		],
 	}
 
@@ -948,7 +996,7 @@ def set_chat_done(chat: str | None = None, beeper_chat_id: str | None = None, do
 	"""Archives a chat in Beeper ("done"), or with done=0 moves it back to the inbox.
 
 	Browser session only: it changes the user's messenger. Beeper archives a merged chat
-	together with the member that is archived, so the member's own ID is used. Takes a stored `chat` or an unassigned direct chat.
+	together with the member that is archived, so the member's own ID is used. Takes a stored `chat` or an unassigned direct or group chat.
 	"""
 	check_browser_session(DONE_COMMAND, frappe._("Only possible in a browser session."))
 	if bool(chat) == bool(beeper_chat_id):

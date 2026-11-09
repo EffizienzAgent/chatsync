@@ -159,7 +159,26 @@ class TestGroupSuggestions(GroupCase):
 		self.fake.chat_items.append(raw)
 		item = next(i for i in self.group_items() if i["beeper_chat_id"] == raw["id"])
 		self.assertEqual([m["contact"] for m in item["members"]], [by_id, dora])
+		self.assertEqual([m["by_name"] for m in item["members"]], [False, True])
 		self.assertEqual(item["suggested_parties"], [])
+
+	def test_name_matches_suggest_no_party_and_respect_the_contact_filter(self):
+		full_name = frappe.db.get_value("Contact", self.anna, "full_name")
+		raw = group_json(person(full_name))
+		self.fake.chat_items.append(raw)
+		item = next(i for i in self.group_items() if i["beeper_chat_id"] == raw["id"])
+		self.assertEqual((item["members"][0]["contact"], item["members"][0]["by_name"]), (self.anna, True))
+		self.assertEqual(item["suggested_parties"], [])
+		use_hooks(self, chatsync_contact_filter=["chatsync.tests.test_matching.only_marked"])
+		item = next(i for i in self.group_items() if i["beeper_chat_id"] == raw["id"])
+		self.assertIsNone(item["members"][0]["contact"])
+
+	def test_the_group_chat_id_does_not_pick_a_member_contact(self):
+		make_contact(
+			"byid", identifiers=[{"network": "whatsapp", "beeper_chat_id": self.raw["id"], "identifier": "x"}]
+		)
+		[item] = self.group_items()
+		self.assertEqual([m["contact"] for m in item["members"]], [self.anna, self.ben, None])
 
 	def test_without_host_hook_nothing_is_suggested(self):
 		use_hooks(self, chatsync_group_parties=[])
@@ -218,6 +237,64 @@ class TestAssignGroup(GroupCase):
 		self.assertEqual((stored.text, stored.sender_id), ("hello group", self.anna_p["id"]))
 		self.assertFalse(frappe.get_all("Chat Identifier", filters={"parent": ["in", [self.anna, self.ben]]}))
 		self.assertEqual(self.group_items(), [])
+
+	def large_group(self):
+		"""The list page holds Anna and the stranger only; Ben and a name match come with all participants."""
+		named = named_contact(f"Nora{tag()}", "Name")
+		self.nora_p = person(frappe.db.get_value("Contact", named, "full_name"))
+		items = self.raw["participants"]["items"]
+		self.fake.full[self.raw["id"]] = {
+			**self.raw,
+			"participants": {"items": [*items, self.nora_p], "hasMore": False, "total": 5},
+		}
+		self.raw["participants"] = {
+			"items": [i for i in items if i["id"] != self.ben_p["id"]],
+			"hasMore": True,
+			"total": 5,
+		}
+		return named
+
+	def test_dialog_gets_every_member_of_a_large_group(self):
+		named = self.large_group()
+		data = api.group_for_assignment(self.raw["id"])
+		self.assertEqual(
+			[(m["contact"], m["by_name"]) for m in data["members"]],
+			[(self.anna, False), (self.ben, False), (None, False), (named, True)],
+		)
+		self.assertEqual([p["party"] for p in data["suggested_parties"]], [self.user_a, self.user_b])
+
+	def test_members_not_offered_keep_identifier_or_phone_matches_only(self):
+		self.large_group()
+		self.browser()
+		name = api.assign_group(
+			self.raw["id"],
+			json.dumps([{"party_type": "User", "party": self.user_a}]),
+			"[]",
+			json.dumps([self.anna_p["id"]]),
+		)
+		members = {m.display_name: m.contact for m in frappe.get_doc("Chat", name).members}
+		self.assertIsNone(members["Anna"])
+		self.assertEqual(members["Ben"], self.ben)
+		self.assertIsNone(members[self.nora_p["fullName"]])
+
+	def test_party_types_follow_the_host_hook_and_exclude_tables_and_singles(self):
+		for party_type, party in (("Chat Party", "x"), ("Chat Sync Settings", "Chat Sync Settings")):
+			with self.assertRaises(frappe.ValidationError):
+				self.assign(parties=[{"party_type": party_type, "party": party}], contacts=[])
+		use_hooks(self, chatsync_group_party_type=["Contact"])
+		with self.assertRaises(frappe.ValidationError):
+			self.assign(parties=[{"party_type": "User", "party": self.user_a}], contacts=[])
+		[item] = self.group_items()
+		self.assertEqual(item["suggested_parties"], [])
+		name = self.assign(parties=[{"party_type": "Contact", "party": self.anna}], contacts=[])
+		self.assertEqual(frappe.get_doc("Chat", name).parties[0].party, self.anna)
+
+	def test_duplicate_parties_are_stored_once(self):
+		party = {"party_type": "User", "party": self.user_a}
+		doc = frappe.get_doc("Chat", self.assign(parties=[party]))
+		doc.append("parties", party)
+		doc.save(ignore_permissions=True)
+		self.assertEqual(len(frappe.get_doc("Chat", doc.name).parties), 1)
 
 	def test_assign_fetches_all_participants_of_a_large_group(self):
 		extra = person("Late Member")

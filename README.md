@@ -76,9 +76,13 @@ networks Beeper bridges end up in one place.
   direct chats (identifier, phone number with the contact filter, full name for members without a
   number); the suggested parties come from the host hook `chatsync_group_parties` (for example the
   organizations of the matched contacts, see [docs/extending.md](docs/extending.md)).
-- *Assign group* (`chatsync.api.assign_group`, browser session only) asks which parties the group
-  belongs to (one or more, e.g. a customer and a partner; suggestions preselected, more can be
-  added) and which members to link to their contacts (matched ones preselected). Only then is the
+- *Assign group* (`chatsync.api.assign_group`, browser session only) first loads all participants
+  (`chatsync.api.group_for_assignment`; list pages carry only some of a large group's), then asks
+  which parties the group belongs to (one or more, e.g. a customer and a partner; suggestions
+  preselected, more can be added; only the host's `chatsync_group_party_type` when set, never child
+  tables or single DocTypes) and which members to link to their contacts (matched by identifier or
+  phone: preselected; found by full name only: offered unchecked, marked "by name", and only if the
+  contact passes the contact filter). Parties are suggested from identifier and phone matches only. Only then is the
   group stored, with its parties (`Chat Party`) and members (`Chat Member`), and its full history is
   imported. Members' contacts get no chat identifier rows, so their direct chats match as before.
 - Stored groups sync like direct chats: new messages, edits and deletions of the last two days,
@@ -142,7 +146,7 @@ The scheduler syncs every two minutes. Token and transcription keys are stored a
   (`chatsync.api.ignore_chat`), for example private chats. Only the chat ID is kept, on the user's
   Chat Account; an ignored chat no longer shows up there. Host apps may cache the unassigned list:
   the INOCEA Hub's Heute page keeps it in Redis, titles of ignored chats included, for up to two
-  minutes. When the chat's number belongs to exactly
+  minutes; for unassigned groups that includes the members' names and phone numbers. When the chat's number belongs to exactly
   one readable contact that phone matching skips (see the contact filter), the entry names it as
   `existing_contact`, so it can be assigned instead of creating a duplicate.
 - The chat view (`/desk/chat-view`) has two segments: **Conversations** (assigned chats) and

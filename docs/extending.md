@@ -73,8 +73,9 @@ def group_parties(contacts):
 	return [("Customer", name) for name in links]
 ```
 
-`chatsync_group_party_type` names the doctype *Assign group* offers when nothing is suggested
-(available in the browser as `frappe.boot.chatsync_group_party_type`). Stored groups keep their
+`chatsync_group_party_type` names the doctype *Assign group* offers (available in the browser as
+`frappe.boot.chatsync_group_party_type`); when it is set, only parties of that doctype are suggested
+and accepted. Stored groups keep their
 parties in the child table `Chat Party` (`party_type`, `party`) and their members in `Chat Member`
 (`contact`, `participant_id`, `display_name`, `phone`), so apps can show them on the party's or the
 member's timeline. The shared dialog is `chatsync.ui.assign_group(item, on_done)`, where `item` is

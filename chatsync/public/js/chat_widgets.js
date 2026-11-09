@@ -34,15 +34,27 @@ function group_summary(item) {
 	return parts.join(" · ");
 }
 
-/** Asks which parties a group belongs to and which members' contacts to link, then stores it. */
+/** Loads all participants of a group (list pages carry only some), then opens the assign dialog. */
 function assign_group(item, on_done) {
+	return frappe
+		.call({
+			method: "chatsync.api.group_for_assignment",
+			type: "GET",
+			args: { beeper_chat_id: item.beeper_chat_id },
+			freeze: true,
+		})
+		.then((r) => group_dialog(r.message, on_done));
+}
+
+/** Asks which parties a group belongs to and which members' contacts to link, then stores it. */
+function group_dialog(item, on_done) {
 	const parties = (item.suggested_parties || []).map((p) => ({ ...p }));
 	const party_type = parties[0]?.party_type || frappe.boot.chatsync_group_party_type || null;
 	const escape = frappe.utils.escape_html;
 	const party_option = (party, index) => ({ label: escape(party.title || party.party), value: String(index), checked: 1 });
 	const members = (item.members || []).filter((m) => m.contact);
 	const dialog = new frappe.ui.Dialog({
-		title: __("Assign group: {0}", [item.title || item.beeper_chat_id], CONTEXT),
+		title: __("Assign group: {0}", [escape(item.title || item.beeper_chat_id)], CONTEXT),
 		fields: [
 			{
 				fieldname: "party_type",
@@ -85,11 +97,14 @@ function assign_group(item, on_done) {
 				fieldtype: "MultiCheck",
 				label: __("Link members to contacts", null, CONTEXT),
 				options: members.map((m, index) => ({
-					label: escape(
-						m.contact_name && m.contact_name !== m.display_name ? `${m.display_name} → ${m.contact_name}` : m.display_name || m.contact
-					),
+					label:
+						escape(
+							m.contact_name && m.contact_name !== m.display_name
+								? `${m.display_name} → ${m.contact_name}`
+								: m.display_name || m.contact
+						) + (m.by_name ? ` <span class="text-muted">(${escape(__("by name", null, CONTEXT))})</span>` : ""),
 					value: String(index),
-					checked: 1,
+					checked: m.by_name ? 0 : 1,
 				})),
 				sort_options: false,
 				columns: 1,
@@ -113,6 +128,7 @@ function assign_group(item, on_done) {
 						beeper_chat_id: item.beeper_chat_id,
 						parties: JSON.stringify(chosen.map(({ party_type, party }) => ({ party_type, party }))),
 						contacts: JSON.stringify((values.contacts || []).map((index) => members[Number(index)].contact)),
+						offered: JSON.stringify(members.map((m) => m.participant_id)),
 					},
 				})
 				.then((r) => {

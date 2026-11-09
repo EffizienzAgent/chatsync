@@ -11,7 +11,7 @@ from chatsync.phone import normalize
 @dataclass(frozen=True)
 class Counterpart:
 	network: str
-	beeper_chat_id: str
+	beeper_chat_id: str | None
 	participant_id: str
 	phone: str | None
 	username: str | None
@@ -57,10 +57,11 @@ def member_count(chat: dict) -> int:
 	return len(others(chat))
 
 
-def person_counterpart(chat: dict, person: dict) -> Counterpart:
+def person_counterpart(chat: dict, person: dict, member: bool = False) -> Counterpart:
+	"""A group member has no chat ID of its own: the group's ID must not pick a contact."""
 	return Counterpart(
 		network=network_of(chat),
-		beeper_chat_id=chat["id"],
+		beeper_chat_id=None if member else chat["id"],
 		participant_id=person.get("id"),
 		phone=person.get("phoneNumber"),
 		username=person.get("username"),
@@ -163,9 +164,10 @@ def by_phone(user: str, phone: str, index: dict[str, list[str]]) -> Match | None
 
 
 def by_identifiers(user: str, cp: Counterpart) -> Match | None:
-	found = from_rows(user, identifier_rows(beeper_chat_id=cp.beeper_chat_id), cp.beeper_chat_id)
-	if found:
-		return found
+	if cp.beeper_chat_id:
+		found = from_rows(user, identifier_rows(beeper_chat_id=cp.beeper_chat_id), cp.beeper_chat_id)
+		if found:
+			return found
 	for identifier in dict.fromkeys(filter(None, [cp.username, cp.participant_id])):
 		found = from_rows(user, identifier_rows(network=cp.network, identifier=identifier), cp.beeper_chat_id)
 		if found:
@@ -197,15 +199,18 @@ def match_chat(account, cp: Counterpart, index: dict[str, list[str]] | None = No
 	return match(account.user, cp, index=index)
 
 
-def member_contact(user: str, chat: dict, person: dict, index: dict, names: dict | None = None) -> str | None:
-	"""A group member's contact by identifier or phone, as for direct chats; with `names` (suggestions
-	only, never for automatic links) also by full name when the member has no phone number."""
-	found = match(user, person_counterpart(chat, person), index)
-	if found.contact:
-		return found.contact
-	if names is None or person.get("phoneNumber") or found.ambiguous or found.excluded:
+def member_match(user: str, chat: dict, person: dict, index: dict) -> str | None:
+	"""A group member's contact by identifier or phone, as for direct chats; safe for automatic links."""
+	return match(user, person_counterpart(chat, person, member=True), index).contact
+
+
+def member_name_match(user: str, person: dict, names: dict) -> str | None:
+	"""A suggestion only: the one qualifying contact whose full name is the member's, for members
+	without a phone number."""
+	if person.get("phoneNumber"):
 		return None
-	return name_suggestion(user, [person.get("fullName")], names)
+	found = name_suggestion(user, [person.get("fullName")], names)
+	return found if found and contact_filter()(found) else None
 
 
 def member_row(person: dict, contact: str | None) -> dict:
@@ -218,4 +223,12 @@ def member_row(person: dict, contact: str | None) -> dict:
 
 
 def group_members(user: str, chat: dict, index: dict, names: dict | None = None) -> list[dict]:
-	return [member_row(p, member_contact(user, chat, p, index, names)) for p in others(chat)]
+	"""Members with their contact; with `names`, `by_name` marks contacts found by full name only."""
+	result = []
+	for person in others(chat):
+		contact = member_match(user, chat, person, index)
+		by_name = (
+			not contact and names is not None and bool(contact := member_name_match(user, person, names))
+		)
+		result.append({**member_row(person, contact), "by_name": by_name})
+	return result

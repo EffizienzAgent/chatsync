@@ -7,12 +7,11 @@ from chatsync.beeper import BeeperAuthError, BeeperClient, BeeperError
 from chatsync.matching import (
 	counterpart,
 	is_group,
-	match,
 	match_chat,
+	member_match,
 	member_row,
 	network_of,
 	others,
-	person_counterpart,
 	phone_index,
 	self_id,
 )
@@ -302,11 +301,7 @@ def refresh_group(client: BeeperClient, account, raw: dict, chat: str, index: di
 	rows = []
 	for person in others(raw):
 		pid = person.get("id")
-		contact = (
-			known[pid]
-			if pid in known
-			else match(account.user, person_counterpart(raw, person), index).contact
-		)
+		contact = known[pid] if pid in known else member_match(account.user, raw, person, index)
 		rows.append(member_row(person, contact))
 	current = [{key: m.get(key) for key in MEMBER_FIELDS} for m in doc.members]
 	if rows != current or doc.title != raw.get("title") or doc.self_id != self_id(raw):

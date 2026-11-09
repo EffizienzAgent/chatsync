@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.6.0](https://github.com/EffizienzAgent/chatsync/compare/v0.4.0...v0.6.0) (2026-11-09)
+
+
+### Features
+
+* **chat-view:** done and reopen in Beeper, only open conversations, reactions with a picker ([0fcd70e](https://github.com/EffizienzAgent/chatsync/commit/0fcd70e9f5f0d5d0b34edb2b89b28098c592260c))
+* open chats from Beeper's archive state, done = archive, reactions stored and sent ([697cecc](https://github.com/EffizienzAgent/chatsync/commit/697cecc7cffa74548cee1d7a46665ac81ea67532))
+* pictures of people in chat payloads, Beeper avatars streamed owner-only ([752f5c4](https://github.com/EffizienzAgent/chatsync/commit/752f5c4ca883e98c78b20aeafb309821fc4c7436))
+* quick reply on the contact, pictures in all chat views, instant send with pending state ([f485170](https://github.com/EffizienzAgent/chatsync/commit/f485170b8d4a5598e3bc14e40ab9c0a0b2e84583))
+* send_message returns once Beeper accepted the message ([76f2af8](https://github.com/EffizienzAgent/chatsync/commit/76f2af856968010b3d31834123c4f156dbdb1069))
+
+
+### Bug Fixes
+
+* **chat:** keep scroll position when the message list re-renders ([2f42f93](https://github.com/EffizienzAgent/chatsync/commit/2f42f933645e7a9a51492fb641619a1d944b548c))
+* match sent messages only after the send, avatar errors fall back to initials ([247c365](https://github.com/EffizienzAgent/chatsync/commit/247c3654fb7ad8c5928dbc78bd53d549d54d5d6e))
+* review round for open chats ([02ce83e](https://github.com/EffizienzAgent/chatsync/commit/02ce83e01ba094348104d9f47f5b561745ba906a))
+
+
+### Performance Improvements
+
+* archive state of quiet chats from the listed pages, single checks at most every 10 minutes ([9c8a7d0](https://github.com/EffizienzAgent/chatsync/commit/9c8a7d0e4c475dc2a44a1fcf377a6ecebd7e78e1))
+
+
+### Documentation
+
+* open chats and done = archived in Beeper, reactions, chatsync_chat_done hook ([0a1d800](https://github.com/EffizienzAgent/chatsync/commit/0a1d800b98545b4e1ed7e8a0f423bb713c9b355f))
+
+
+### Miscellaneous Chores
+
+* release 0.6.0 ([6f4db3e](https://github.com/EffizienzAgent/chatsync/commit/6f4db3e97bf9417eaaa9bdeba88e538dcb6d328e))
+
 ## [0.4.0](https://github.com/EffizienzAgent/chatsync/compare/v0.3.1...v0.4.0) (2026-11-09)
 
 

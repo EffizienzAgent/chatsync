@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.7.0](https://github.com/EffizienzAgent/chatsync/compare/v0.6.0...v0.7.0) (2026-11-09)
+
+
+### Features
+
+* **chat-view:** group chats with icon, Assign group dialog, members in the header, sender per message ([f2addd5](https://github.com/EffizienzAgent/chatsync/commit/f2addd5c6ae7748455169ca836b11ad1c3128259))
+* group chats stored only by explicit assignment, attached to parties and linked to member contacts ([311b8ff](https://github.com/EffizienzAgent/chatsync/commit/311b8ff65cfa03f69b0c3a45a1a1aa5229a737bb))
+
+
+### Bug Fixes
+
+* **api:** archive the member chat, not its merged parent ([7f3d269](https://github.com/EffizienzAgent/chatsync/commit/7f3d269afc0c8fb7c39eca6f33e64ce518b0a2b1))
+* **api:** drop unused chat lookup in set_chat_done ([5ca6bfe](https://github.com/EffizienzAgent/chatsync/commit/5ca6bfefdf1e8b2d12d12f6f73df87ab385e9e45))
+* archive the member chat, not its merged parent ([0d48a73](https://github.com/EffizienzAgent/chatsync/commit/0d48a7377025711d74900a86e42cf74ccfa66a7f))
+* **chat-view:** group summary wraps in the unassigned list ([3c0c499](https://github.com/EffizienzAgent/chatsync/commit/3c0c499ead7fe624750d2a96080d364e933f19f7))
+* group chats are open but never waiting for a reply ([41350db](https://github.com/EffizienzAgent/chatsync/commit/41350db45453b74abd2af4be2c7ee820111f1a34))
+* review round for group chats ([fd91d39](https://github.com/EffizienzAgent/chatsync/commit/fd91d396aa3cc93a2118e681614ba286fb18b95e))
+
 ## [0.6.0](https://github.com/EffizienzAgent/chatsync/compare/v0.4.0...v0.6.0) (2026-11-09)
 
 

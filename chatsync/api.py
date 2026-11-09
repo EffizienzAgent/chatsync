@@ -185,10 +185,20 @@ def unassigned_items(account, raws, include_ignored: bool = False) -> list[dict]
 			"ambiguous": found.ambiguous,
 			"existing_contact": existing[0] if len(existing) == 1 else None,
 			"ignored": hidden,
+			"archived": bool(raw.get("isArchived")),
+			"needs_reply": waits_for_reply(raw),
 			"suggested_contact": suggested,
 			"suggested_contact_name": contact_name(suggested),
 		}
 	return list(result.values())
+
+
+def waits_for_reply(raw: dict) -> bool:
+	"""The last message is the other person's; chats fetched one by one carry no preview, only unread state."""
+	preview = raw.get("preview")
+	if preview:
+		return not preview.get("isSender")
+	return bool(raw.get("unreadCount") or raw.get("isMarkedUnread"))
 
 
 def find_unassigned_chats(
@@ -342,6 +352,7 @@ MESSAGE_FIELDS = [
 	"transcript",
 	"media_url",
 	"attachments",
+	"reactions",
 ]
 
 
@@ -351,6 +362,7 @@ def serialize(row: dict) -> dict:
 	row.pop("attachments", None)
 	return {
 		**row,
+		"reactions": messages.grouped_reactions(row.get("reactions")),
 		"sent_at": str(row["sent_at"]),
 		"html": formatting.render(row["text"]),
 		"has_media": bool(attachments),
@@ -388,9 +400,12 @@ def get_messages(chat: str, before: str | None = None, limit: int = 200) -> dict
 	rows = newest_first(chat, before, limit)
 	has_more = len(rows) > limit
 	rows = rows[:limit][::-1]
-	title, network, contact = frappe.db.get_value("Chat", chat, ["title", "network", "contact"])
+	title, network, contact, archived = frappe.db.get_value(
+		"Chat", chat, ["title", "network", "contact", "beeper_archived"]
+	)
 	return {
 		"chat": {
+			"archived": bool(archived),
 			"title": title,
 			"network": network,
 			"network_label": networks.label(network),
@@ -409,7 +424,7 @@ def own_chats(contact: str) -> list[dict]:
 	chats = frappe.get_list(
 		"Chat",
 		filters={"contact": contact, "user": frappe.session.user},
-		fields=["name", "network", "title", "last_message_at", "creation"],
+		fields=["name", "network", "title", "last_message_at", "creation", "beeper_archived"],
 		order_by="last_message_at desc, creation desc",
 	)
 	if not chats:
@@ -431,6 +446,7 @@ def own_chats(contact: str) -> list[dict]:
 			"last_message_at": c.last_message_at,
 			"last_incoming_at": incoming.get(c.name),
 			"creation": c.creation,
+			"archived": bool(c.beeper_archived),
 		}
 		for c in chats
 	]
@@ -529,8 +545,7 @@ def pull_latest(chat: str, client, beeper_chat_id: str) -> list[dict]:
 			continue
 		if name := messages.upsert(chat, raw):
 			names.append(name)
-	last = frappe.db.get_value("Chat Message", {"chat": chat}, "sent_at", order_by="sent_at desc")
-	frappe.db.set_value("Chat", chat, "last_message_at", last, update_modified=False)
+	sync.update_activity(chat)
 	rows = frappe.get_all(
 		"Chat Message", filters={"name": ["in", names]}, fields=MESSAGE_FIELDS, order_by="sent_at"
 	)
@@ -658,7 +673,7 @@ def get_conversations() -> list[dict]:
 	chats = frappe.get_list(
 		"Chat",
 		filters={"user": frappe.session.user},
-		fields=["name", "network", "title", "contact", "last_message_at", "creation"],
+		fields=["name", "network", "title", "contact", "last_message_at", "creation", "beeper_archived"],
 		limit_page_length=0,
 	)
 	groups: dict[str, list] = {}
@@ -691,6 +706,7 @@ def get_conversations() -> list[dict]:
 				"direction": last.get("direction"),
 				"preview": messages.summary_text(last) if last else "",
 				"avatar_url": avatar_url(None, newest_chat(members), images.get(contact)),
+				"archived": all(c.beeper_archived for c in members),
 			}
 		)
 	return sorted(rows, key=lambda r: str(r["last_message_at"] or ""), reverse=True)
@@ -712,3 +728,143 @@ def contact_images(contacts: list[str]) -> dict[str, str]:
 		fields=["name", "image"],
 	)
 	return {r.name: r.image for r in rows}
+
+
+DONE_COMMAND = "chatsync.api.set_chat_done"
+REACT_COMMAND = "chatsync.api.react"
+REACTION_KEY_LIMIT = 64
+OPEN_CHAT_FIELDS = [
+	"name",
+	"contact",
+	"network",
+	"title",
+	"last_message_at",
+	"last_incoming_at",
+	"last_outgoing_at",
+	"unread_count",
+	"creation",
+]
+
+
+def run_hooks(name: str, **kwargs) -> None:
+	for method in frappe.get_hooks(name):
+		frappe.get_attr(method)(**kwargs)
+
+
+@frappe.whitelist(methods=["POST"])
+def set_chat_done(chat: str | None = None, beeper_chat_id: str | None = None, done: int = 1) -> dict:
+	"""Archives a chat in Beeper ("done"), or with done=0 moves it back to the inbox.
+
+	Browser session only: it changes the user's messenger. A merged member archives its merged
+	chat, as Beeper's inbox shows only that. Takes a stored `chat` or an unassigned direct chat.
+	"""
+	check_browser_session(DONE_COMMAND, frappe._("Only possible in a browser session."))
+	if bool(chat) == bool(beeper_chat_id):
+		frappe.throw(frappe._("Give either a chat or a Beeper chat ID."))
+	done = bool(cint(done))
+	if chat:
+		check_chat(chat, write=True)
+		client, beeper_chat_id = chat_client(chat)
+		account = frappe.db.get_value("Chat", chat, "account")
+		raw = beeper_call(client.chat, beeper_chat_id)
+	else:
+		doc = session_account()
+		account = doc.name
+		client = sync.client_for(doc)
+		raw, _cp = direct_chat(client, beeper_chat_id)
+	beeper_call(client.archive, raw.get("mergedIntoChatID") or beeper_chat_id, done)
+	stored = frappe.db.get_value("Chat", {"account": account, "beeper_chat_id": beeper_chat_id})
+	if stored:
+		frappe.db.set_value("Chat", stored, "beeper_archived", int(done), update_modified=False)
+	user = frappe.db.get_value("Chat Account", account, "user")
+	run_hooks("chatsync_chat_done", user=user, beeper_chat_id=beeper_chat_id, done=done)
+	return {"chat": chat, "beeper_chat_id": beeper_chat_id, "done": done}
+
+
+def needs_reply(chat) -> bool:
+	return bool(chat.last_incoming_at) and (
+		not chat.last_outgoing_at or chat.last_incoming_at > chat.last_outgoing_at
+	)
+
+
+def open_assigned_chats(user: str | None = None) -> list[dict]:
+	"""The user's stored chats not archived in Beeper, one row per contact; waiting ones first."""
+	user = user or frappe.session.user
+	accounts = frappe.get_all("Chat Account", filters={"user": user, "enabled": 1}, pluck="name")
+	if not accounts:
+		return []
+	chats = frappe.get_all(
+		"Chat",
+		filters={"user": user, "account": ["in", accounts], "beeper_archived": 0},
+		fields=OPEN_CHAT_FIELDS,
+		order_by="last_message_at desc, creation desc",
+	)
+	groups: dict[str, list] = {}
+	for chat in chats:
+		groups.setdefault(chat.contact or chat.name, []).append(chat)
+	contacts = [c.contact for c in chats if c.contact]
+	names, images = contact_names(contacts), contact_images(contacts)
+	rows = [open_row(members, names, images) for members in groups.values()]
+	return sorted(rows, key=lambda r: (r["needs_reply"], str(r["last_activity"] or "")), reverse=True)
+
+
+def open_row(members: list, names: dict, images: dict) -> dict:
+	waiting = [c for c in members if needs_reply(c)]
+	incoming = [c for c in members if c.last_incoming_at]
+	reply_to = max(incoming, key=lambda c: c.last_incoming_at) if incoming else members[0]
+	last = newest_message([c.name for c in members])
+	contact = members[0].contact
+	return {
+		"chat": reply_to.name,
+		"chats": [c.name for c in members],
+		"contact": contact,
+		"contact_name": names.get(contact) or members[0].title or members[0].name,
+		"networks": sorted({networks.label(c.network) for c in members}),
+		"preview": messages.summary_text(last) if last else "",
+		"direction": last.get("direction") if last else None,
+		"last_activity": max((c.last_message_at for c in members if c.last_message_at), default=None),
+		"last_incoming_at": reply_to.last_incoming_at,
+		"needs_reply": bool(waiting),
+		"unread_count": sum(c.unread_count or 0 for c in members),
+		"avatar_url": avatar_url(None, newest_chat(members), images.get(contact)),
+	}
+
+
+def newest_message(chats: list[str]) -> dict | None:
+	table = frappe.qb.DocType("Chat Message")
+	rows = (
+		frappe.qb.from_(table)
+		.select(table.direction, table.kind, table.text, table.transcript)
+		.where(table.chat.isin(chats))
+		.orderby(table.sent_at, order=frappe.qb.desc)
+		.limit(1)
+		.run(as_dict=True)
+	)
+	return rows[0] if rows else None
+
+
+@frappe.whitelist(methods=["POST"])
+def react(message: str, key: str, remove: int = 0) -> dict:
+	"""Adds (or removes) the user's reaction; browser session only, like sending: the other person sees it."""
+	check_browser_session(REACT_COMMAND, frappe._("Reacting is only possible from the chat window."))
+	found = frappe.db.get_value("Chat Message", message, ["chat", "beeper_message_id", "reactions"])
+	if not found:
+		frappe.throw(
+			frappe._("No permission for Chat Message {0}").format(escape_html(message)),
+			frappe.PermissionError,
+		)
+	chat, beeper_message_id, stored = found
+	check_chat(chat, write=True)
+	key = (key or "").strip()
+	if not key or len(key) > REACTION_KEY_LIMIT:
+		frappe.throw(frappe._("Invalid reaction."))
+	client, beeper_chat_id = chat_client(chat)
+	remove = bool(cint(remove))
+	call = client.unreact if remove else client.react
+	beeper_call(call, beeper_chat_id, beeper_message_id, key)
+	reactions = [r for r in json.loads(stored or "[]") if not (r.get("is_self") and r["key"] == key)]
+	if not remove:
+		reactions.append({"key": key, "participant_id": None, "is_self": True})
+	value = json.dumps(reactions, ensure_ascii=False) if reactions else None
+	frappe.db.set_value("Chat Message", message, "reactions", value)
+	return {"reactions": messages.grouped_reactions(value)}

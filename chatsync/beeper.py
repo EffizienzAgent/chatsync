@@ -51,6 +51,16 @@ class BeeperClient:
 		path = f"/v1/chats/{quote(chat_id, safe='')}/messages"
 		return self._request("POST", path, json={"text": text}).json()
 
+	def archive(self, chat_id: str, archived: bool = True) -> None:
+		self._request("POST", f"/v1/chats/{quote(chat_id, safe='')}/archive", json={"archived": archived})
+
+	def react(self, chat_id: str, message_id: str, key: str) -> dict:
+		return self._request("POST", _reactions(chat_id, message_id), json={"reactionKey": key}).json()
+
+	def unreact(self, chat_id: str, message_id: str, key: str) -> dict:
+		path = f"{_reactions(chat_id, message_id)}/{quote(key, safe='')}"
+		return self._request("DELETE", path).json()
+
 	def accounts(self) -> list[dict]:
 		return self._get("/v1/accounts").json()
 
@@ -123,6 +133,10 @@ def _read(response, limit: int | None) -> bytes:
 			raise AssetTooLarge(limit)
 		chunks.append(chunk)
 	return b"".join(chunks)
+
+
+def _reactions(chat_id: str, message_id: str) -> str:
+	return f"/v1/chats/{quote(chat_id, safe='')}/messages/{quote(message_id, safe='')}/reactions"
 
 
 def _cursor(cursor: str | None) -> dict:

@@ -5,7 +5,7 @@ from frappe.utils import get_datetime, now_datetime
 
 from chatsync.beeper import BeeperAuthError, BeeperClient, BeeperError
 from chatsync.matching import counterpart, match_chat, phone_index
-from chatsync.merges import expand, failures
+from chatsync.merges import archived, expand, failures
 from chatsync.messages import sort_order, to_site_time, upsert
 
 EDIT_WINDOW_DAYS = 2
@@ -83,6 +83,7 @@ def sync_account(account: str) -> None:
 		index = phone_index()
 		failed: list[tuple[str, str, str]] = []
 		members: dict = {}
+		seen: set[str] = set()
 		for raw in walk_members(client, threshold, members):
 			cp = counterpart(raw)
 			if not cp:
@@ -93,6 +94,8 @@ def sync_account(account: str) -> None:
 			try:
 				chat = ensure_chat(doc, raw, cp, found.contact)
 				sync_chat(client, chat, started, days)
+				store_state(chat, raw, archived(client, raw, members))
+				seen.add(chat)
 			except BeeperAuthError:
 				raise
 			except Exception as e:
@@ -101,6 +104,7 @@ def sync_account(account: str) -> None:
 				continue
 			kept(chat)
 		failed += [(chat_id, str(e), "") for chat_id, e in failures(members)]
+		refresh_open_chats(client, account, seen, members)
 		queue_incomplete_histories(account)
 	except BeeperError as e:
 		fail(account, e)
@@ -117,6 +121,34 @@ def sync_account(account: str) -> None:
 		{"last_synced_at": started, "initial_sync_done": 1, "last_error": None},
 		update_modified=False,
 	)
+	commit()
+
+
+def store_state(chat: str, raw: dict, is_archived: bool) -> None:
+	frappe.db.set_value(
+		"Chat",
+		chat,
+		{"beeper_archived": int(is_archived), "unread_count": raw.get("unreadCount") or 0},
+		update_modified=False,
+	)
+
+
+def refresh_open_chats(client: BeeperClient, account: str, seen: set[str], cache: dict) -> None:
+	"""Chats can be archived in Beeper without new activity: open chats the walk missed are asked for."""
+	for chat, beeper_chat_id in frappe.get_all(
+		"Chat",
+		filters={"account": account, "beeper_archived": 0, "name": ["not in", list(seen) or [""]]},
+		fields=["name", "beeper_chat_id"],
+		as_list=True,
+	):
+		try:
+			raw = client.chat(beeper_chat_id)
+		except BeeperAuthError:
+			raise
+		except BeeperError as e:
+			frappe.logger("chatsync").warning(f"State of chat {beeper_chat_id} could not be loaded: {e}")
+			continue
+		store_state(chat, raw, archived(client, raw, cache))
 	commit()
 
 
@@ -215,13 +247,23 @@ def remove_vanished(chat: str, window_start: datetime, seen: set[str]) -> None:
 
 
 def update_cursor(chat: str, newest_sort_key: str | None) -> None:
-	last = frappe.db.get_value("Chat Message", {"chat": chat}, "sent_at", order_by="sent_at desc")
-	frappe.db.set_value(
-		"Chat",
-		chat,
-		{"newest_sort_key": newest_sort_key, "last_message_at": last},
-		update_modified=False,
+	frappe.db.set_value("Chat", chat, "newest_sort_key", newest_sort_key, update_modified=False)
+	update_activity(chat)
+
+
+def update_activity(chat: str) -> None:
+	"""When the chat last saw a message, and one in each direction (does it wait for an answer?)."""
+	table = frappe.qb.DocType("Chat Message")
+	newest = dict(
+		frappe.qb.from_(table)
+		.select(table.direction, frappe.qb.functions("MAX", table.sent_at))
+		.where(table.chat == chat)
+		.groupby(table.direction)
+		.run()
 	)
+	values = {"last_incoming_at": newest.get("In"), "last_outgoing_at": newest.get("Out")}
+	values["last_message_at"] = max(filter(None, values.values()), default=None)
+	frappe.db.set_value("Chat", chat, values, update_modified=False)
 
 
 def import_history(chat: str) -> None:

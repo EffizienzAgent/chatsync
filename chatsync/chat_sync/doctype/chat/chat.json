@@ -20,7 +20,11 @@
   "history_complete",
   "history_cursor",
   "last_message_at",
-  "newest_sort_key"
+  "newest_sort_key",
+  "beeper_archived",
+  "unread_count",
+  "last_incoming_at",
+  "last_outgoing_at"
  ],
  "fields": [
   {
@@ -105,6 +109,32 @@
    "fieldname": "newest_sort_key",
    "fieldtype": "Data",
    "label": "Newest Sort Key"
+  },
+  {
+   "fieldname": "beeper_archived",
+   "fieldtype": "Check",
+   "label": "Archived in Beeper",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "unread_count",
+   "fieldtype": "Int",
+   "label": "Unread Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_incoming_at",
+   "fieldtype": "Datetime",
+   "label": "Last Incoming At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_outgoing_at",
+   "fieldtype": "Datetime",
+   "label": "Last Outgoing At",
+   "read_only": 1
   }
  ],
  "autoname": "hash",

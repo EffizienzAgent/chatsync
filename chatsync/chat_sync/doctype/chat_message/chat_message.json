@@ -18,6 +18,7 @@
   "text",
   "media_url",
   "attachments",
+  "reactions",
   "transcript",
   "transcript_provider"
  ],
@@ -85,6 +86,11 @@
    "fieldname": "attachments",
    "fieldtype": "JSON",
    "label": "Attachments"
+  },
+  {
+   "fieldname": "reactions",
+   "fieldtype": "JSON",
+   "label": "Reactions"
   },
   {
    "fieldname": "transcript",

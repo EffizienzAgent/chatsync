@@ -79,6 +79,26 @@ class TestBeeperClient(IntegrationTestCase):
 		self.assertEqual(kw["json"], {"text": "Hallo"})
 		self.assertEqual(result["pendingMessageID"], "7")
 
+	def test_archive_and_unarchive(self):
+		with self.serve(FakeResponse(status_code=204), FakeResponse(status_code=204)):
+			self.assertIsNone(self.client.archive(CHAT_ID))
+			self.client.archive(CHAT_ID, archived=False)
+		(method, url, kw), (_, _, kw2) = self.calls
+		self.assertEqual(method, "POST")
+		self.assertTrue(url.endswith("/v1/chats/%21abc%3Abeeper.example/archive"))
+		self.assertEqual((kw["json"], kw2["json"]), ({"archived": True}, {"archived": False}))
+
+	def test_react_and_unreact(self):
+		with self.serve(FakeResponse({"success": True}), FakeResponse({"success": True})):
+			self.client.react(CHAT_ID, "m/1", "👍")
+			self.client.unreact(CHAT_ID, "m/1", "smiling-face/x")
+		(method, url, kw), (dmethod, durl, _) = self.calls
+		self.assertEqual(method, "POST")
+		self.assertTrue(url.endswith("/v1/chats/%21abc%3Abeeper.example/messages/m%2F1/reactions"))
+		self.assertEqual(kw["json"], {"reactionKey": "👍"})
+		self.assertEqual(dmethod, "DELETE")
+		self.assertTrue(durl.endswith("/messages/m%2F1/reactions/smiling-face%2Fx"))
+
 	def test_accounts(self):
 		with self.serve(FakeResponse([{"accountID": "whatsapp"}])):
 			self.assertEqual(self.client.accounts(), [{"accountID": "whatsapp"}])

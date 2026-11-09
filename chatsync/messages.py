@@ -59,8 +59,31 @@ def is_shown(raw: dict) -> bool:
 	return raw.get("type") not in SKIPPED_TYPES and not raw.get("isHidden") and not raw.get("isDeleted")
 
 
-def values_from(raw: dict) -> dict:
+def reactions_from(raw: dict, counterpart_id: str | None) -> list[dict]:
+	"""Direct chats only: every reaction not by the counterpart is the user's own."""
+	return [
+		{
+			"key": r["reactionKey"],
+			"participant_id": r.get("participantID"),
+			"is_self": bool(counterpart_id) and r.get("participantID") != counterpart_id,
+		}
+		for r in raw.get("reactions") or []
+		if r.get("reactionKey")
+	]
+
+
+def grouped_reactions(value: str | None) -> list[dict]:
+	groups: dict[str, dict] = {}
+	for r in json.loads(value or "[]"):
+		group = groups.setdefault(r["key"], {"key": r["key"], "count": 0, "mine": False})
+		group["count"] += 1
+		group["mine"] = group["mine"] or bool(r.get("is_self"))
+	return list(groups.values())
+
+
+def values_from(raw: dict, counterpart_id: str | None = None) -> dict:
 	attachments = raw.get("attachments") or []
+	reactions = reactions_from(raw, counterpart_id)
 	kind = KINDS.get(raw.get("type"), "Other")
 	return {
 		"sort_key": raw.get("sortKey"),
@@ -72,6 +95,7 @@ def values_from(raw: dict) -> dict:
 		"text": raw.get("text"),
 		"media_url": attachments[0].get("srcURL") if attachments else None,
 		"attachments": json.dumps([from_beeper(a) for a in attachments]) if attachments else None,
+		"reactions": json.dumps(reactions, ensure_ascii=False) if reactions else None,
 	}
 
 
@@ -91,6 +115,7 @@ def preview(raw: dict) -> dict:
 		"html": formatting.render(values["text"]),
 		"has_media": bool(attachments),
 		"attachments": public(attachments),
+		"reactions": grouped_reactions(values["reactions"]),
 	}
 
 
@@ -116,7 +141,7 @@ def upsert(chat: str, raw: dict) -> str | None:
 		if existing:
 			frappe.delete_doc("Chat Message", existing, ignore_permissions=True, force=True)
 		return None
-	values = values_from(raw)
+	values = values_from(raw, frappe.db.get_value("Chat", chat, "counterpart_id", cache=True))
 	if not existing:
 		try:
 			doc = frappe.get_doc(

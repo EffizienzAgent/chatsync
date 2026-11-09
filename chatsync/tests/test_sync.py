@@ -63,6 +63,9 @@ class FakeBeeper:
 	def chats(self, cursor=None):
 		return self.chat_items, None
 
+	def chat(self, chat_id):
+		return next(c for c in self.chat_items if c["id"] == chat_id)
+
 	def messages(self, chat_id, cursor=None, direction="before"):
 		page = int(cursor or 0)
 		self.calls.append((chat_id, page))

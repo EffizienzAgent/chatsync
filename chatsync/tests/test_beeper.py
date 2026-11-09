@@ -65,6 +65,11 @@ class TestBeeperClient(IntegrationTestCase):
 		self.assertEqual(skw["params"], {"query": "anna", "type": "single", "limit": 5})
 		self.assertEqual(kw["headers"]["Authorization"], f"Bearer {TOKEN}")
 
+	def test_chats_page_size(self):
+		with self.serve(FakeResponse({"items": [], "hasMore": False})):
+			self.client.chats("c1", limit=50)
+		self.assertEqual(self.calls[0][2]["params"], {"direction": "before", "cursor": "c1", "limit": 50})
+
 	def test_send_text(self):
 		with self.serve(FakeResponse({"chatID": CHAT_ID, "pendingMessageID": "7"})):
 			result = self.client.send_text(CHAT_ID, "Hallo")

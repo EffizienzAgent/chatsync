@@ -1,3 +1,4 @@
+import unicodedata
 from dataclasses import dataclass
 
 import frappe
@@ -80,6 +81,40 @@ def phone_index() -> dict[str, list[str]]:
 		if row.phone and (e164 := normalize(row.phone, region)):
 			index.setdefault(e164, []).append(row.parent)
 	return index
+
+
+def name_key(value: str | None) -> str:
+	"""Casefolded, without diacritics, punctuation or emoji, single-spaced."""
+	text = unicodedata.normalize("NFKD", value or "").casefold()
+	text = "".join(
+		ch if unicodedata.category(ch)[0] in "LN" else " " for ch in text if not unicodedata.combining(ch)
+	)
+	return " ".join(text.split())
+
+
+def name_keys(name: str | None) -> set[str]:
+	"""Full-name keys of a chat title; "Last, First" also counts as "First Last". One word is no full name."""
+	keys = {name_key(name)}
+	last, comma, first = (name or "").partition(",")
+	if comma:
+		keys.add(name_key(f"{first} {last}"))
+	return {key for key in keys if " " in key}
+
+
+def name_index() -> dict[str, list[str]]:
+	index: dict[str, list[str]] = {}
+	for row in frappe.get_all("Contact", fields=["name", "first_name", "middle_name", "last_name"]):
+		key = name_key(" ".join(filter(None, [row.first_name, row.middle_name, row.last_name])))
+		if " " in key:
+			index.setdefault(key, []).append(row.name)
+	return index
+
+
+def name_suggestion(user: str, names: list[str | None], index: dict[str, list[str]]) -> str | None:
+	"""The one readable contact whose full name equals one of `names`, else None."""
+	keys = set().union(*(name_keys(name) for name in names))
+	contacts = readable(user, [c for key in sorted(keys) for c in index.get(key, [])])
+	return contacts[0] if len(contacts) == 1 else None
 
 
 def phone_contacts(user: str, phone: str, index: dict[str, list[str]]) -> list[str]:

@@ -30,8 +30,9 @@ class BeeperClient:
 		self.headers = {"Authorization": f"Bearer {token}"}
 		self.session = requests.Session()
 
-	def chats(self, cursor: str | None = None) -> tuple[list[dict], str | None]:
-		return self._page("/v1/chats", {"direction": "before", **_cursor(cursor)}, "before")
+	def chats(self, cursor: str | None = None, limit: int | None = None) -> tuple[list[dict], str | None]:
+		params = {"direction": "before", **_cursor(cursor), **({"limit": limit} if limit else {})}
+		return self._page("/v1/chats", params, "before")
 
 	def chat(self, chat_id: str) -> dict:
 		return self._get(f"/v1/chats/{quote(chat_id, safe='')}").json()

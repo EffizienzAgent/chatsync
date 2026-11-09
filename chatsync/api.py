@@ -3,11 +3,18 @@ from contextlib import contextmanager
 from datetime import timedelta
 
 import frappe
-from frappe.utils import escape_html, now_datetime
+from frappe.utils import cint, escape_html, now_datetime
 
 from chatsync import formatting, messages, networks, sync
 from chatsync.beeper import BeeperError
-from chatsync.matching import counterpart, match_chat, phone_contacts, phone_index
+from chatsync.matching import (
+	counterpart,
+	match_chat,
+	name_index,
+	name_suggestion,
+	phone_contacts,
+	phone_index,
+)
 from chatsync.merges import expand, is_merged
 from chatsync.phone import normalize
 
@@ -15,6 +22,7 @@ UNASSIGNED_TIMEOUT = 5
 PHONE_NETWORKS = {"whatsapp", "signal"}
 PREVIEW_LIMIT = 100
 MERGED_SEARCH_LIMIT = 10
+INBOX_PAGE_SIZE = 50
 
 
 @contextmanager
@@ -99,26 +107,61 @@ def add_row(contact: str, values: dict) -> None:
 	).insert(ignore_permissions=True)
 
 
+def searched_members(client, member_client, query: str, limit: int = 20):
+	"""Beeper's search hits (any age) with merged chats replaced by their members."""
+	cache: dict = {}
+	merged_left = MERGED_SEARCH_LIMIT
+	for found in client.search_chats(query, limit):
+		if is_merged(found):
+			if not merged_left:
+				continue
+			merged_left -= 1
+		yield from expand(member_client, found, cache)
+
+
 @frappe.whitelist()
 def search_chats(query: str) -> list[dict]:
 	account = session_account()
 	client = sync.client_for(account)
 	member_client = sync.client_for(account, timeout=UNASSIGNED_TIMEOUT)
-	cache: dict = {}
-	merged_left = MERGED_SEARCH_LIMIT
 	result = {}
-	for found in beeper_call(client.search_chats, query):
-		if is_merged(found):
-			if not merged_left:
-				continue
-			merged_left -= 1
-		for raw in beeper_call(expand, member_client, found, cache):
-			if cp := counterpart(raw):
-				result.setdefault(cp.beeper_chat_id, summary(raw, cp))
+	for raw in beeper_call(list, searched_members(client, member_client, query)):
+		if cp := counterpart(raw):
+			result.setdefault(cp.beeper_chat_id, summary(raw, cp))
 	return list(result.values())
 
 
-def find_unassigned_chats(user: str | None = None, days: int = 14) -> list[dict]:
+def unassigned_items(account, raws, include_ignored: bool = False) -> list[dict]:
+	"""The direct chats among `raws` that no contact takes, with what could be assigned instead."""
+	index, names = phone_index(), name_index()
+	ignored = ignored_chats(account.user)
+	result = {}
+	for raw in raws:
+		cp = counterpart(raw)
+		if not cp or cp.beeper_chat_id in result:
+			continue
+		hidden = cp.beeper_chat_id in ignored
+		if hidden and not include_ignored:
+			continue
+		found = match_chat(account, cp, index=index)
+		if found.contact or found.excluded:
+			continue
+		existing = phone_contacts(account.user, cp.phone, index) if cp.phone else []
+		suggested = None if existing else name_suggestion(account.user, [raw.get("title"), cp.name], names)
+		result[cp.beeper_chat_id] = {
+			**summary(raw, cp),
+			"ambiguous": found.ambiguous,
+			"existing_contact": existing[0] if len(existing) == 1 else None,
+			"ignored": hidden,
+			"suggested_contact": suggested,
+			"suggested_contact_name": contact_name(suggested),
+		}
+	return list(result.values())
+
+
+def find_unassigned_chats(
+	user: str | None = None, days: int = 14, include_ignored: bool = False
+) -> list[dict]:
 	"""Direct chats active in the last `days` that no contact takes. Raises BeeperError."""
 	name = frappe.db.get_value("Chat Account", {"user": user or frappe.session.user, "enabled": 1})
 	if not name:
@@ -126,25 +169,27 @@ def find_unassigned_chats(user: str | None = None, days: int = 14) -> list[dict]
 	account = frappe.get_doc("Chat Account", name)
 	client = sync.client_for(account, timeout=UNASSIGNED_TIMEOUT)
 	threshold = now_datetime() - timedelta(days=int(days))
-	index = phone_index()
-	ignored = ignored_chats(account.user)
-	result = []
-	for raw in sync.walk_members(client, threshold):
-		cp = counterpart(raw)
-		if not cp or cp.beeper_chat_id in ignored:
-			continue
-		found = match_chat(account, cp, index=index)
-		if found.contact or found.excluded:
-			continue
-		existing = phone_contacts(account.user, cp.phone, index) if cp.phone else []
-		result.append(
-			{
-				**summary(raw, cp),
-				"ambiguous": found.ambiguous,
-				"existing_contact": existing[0] if len(existing) == 1 else None,
-			}
-		)
-	return result
+	return unassigned_items(account, sync.walk_members(client, threshold), include_ignored)
+
+
+@frappe.whitelist(methods=["GET"])
+def unassigned_page(cursor: str | None = None, query: str | None = None, include_ignored: int = 0) -> dict:
+	"""One Beeper page of the caller's unassigned direct chats, any age, live; nothing is stored.
+
+	With a `query`, Beeper's chat search (all ages) replaces the list and there is no next page.
+	"""
+	account = session_account()
+	client = sync.client_for(account)
+	member_client = sync.client_for(account, timeout=UNASSIGNED_TIMEOUT)
+	query = (query or "").strip()
+	if query:
+		raws = beeper_call(list, searched_members(client, member_client, query, INBOX_PAGE_SIZE))
+		next_cursor = None
+	else:
+		page, next_cursor = beeper_call(client.chats, cursor or None, INBOX_PAGE_SIZE)
+		cache: dict = {}
+		raws = [member for raw in page for member in beeper_call(expand, member_client, raw, cache)]
+	return {"items": unassigned_items(account, raws, bool(cint(include_ignored))), "next_cursor": next_cursor}
 
 
 def ignored_chats(user: str | None = None) -> set[str]:
@@ -156,10 +201,19 @@ def ignored_chats(user: str | None = None) -> set[str]:
 def ignore_chat(beeper_chat_id: str) -> None:
 	"""Hides a chat from the caller's unassigned chats; nothing about it is stored but its ID."""
 	account = session_account()
-	ignored = sorted(ignored_chats(account.user) | {beeper_chat_id})
+	store_ignored(account, ignored_chats(account.user) | {beeper_chat_id})
+
+
+def store_ignored(account, ignored: set[str]) -> None:
 	frappe.db.set_value(
-		"Chat Account", account.name, "ignored_chats", json.dumps(ignored), update_modified=False
+		"Chat Account", account.name, "ignored_chats", json.dumps(sorted(ignored)), update_modified=False
 	)
+
+
+@frappe.whitelist(methods=["POST"])
+def unignore_chat(beeper_chat_id: str) -> None:
+	account = session_account()
+	store_ignored(account, ignored_chats(account.user) - {beeper_chat_id})
 
 
 @frappe.whitelist()

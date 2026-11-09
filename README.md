@@ -92,6 +92,17 @@ The scheduler syncs every two minutes. Token and transcription keys are stored a
   Chat Account; an ignored chat no longer shows up there. When the chat's number belongs to exactly
   one readable contact that phone matching skips (see the contact filter), the entry names it as
   `existing_contact`, so it can be assigned instead of creating a duplicate.
+- The chat view (`/desk/chat-view`) has two segments: **Conversations** (assigned chats) and
+  **Unassigned**. *Unassigned* lists the user's direct chats without a contact regardless of age,
+  live from Beeper and page by page (`chatsync.api.unassigned_page`, 50 Beeper chats per page,
+  *Load more* for older ones; a search term uses Beeper's chat search over all ages). Nothing is
+  stored. Clicking an entry previews it with the actions *Assign contact*, *Create contact* and
+  *Ignore*; *Show ignored* includes ignored chats, which can be brought back with *Stop ignoring*
+  (`chatsync.api.unignore_chat`).
+- Chats without a phone match (LinkedIn, Instagram, Telegram, …) get a `suggested_contact` when
+  exactly one readable contact has the chat title as its full name (case, diacritics, punctuation
+  and emoji ignored; "Last, First" counts as "First Last"; single words are not suggested). It is a
+  suggestion only: nothing is assigned until the user confirms it.
 - Apps can restrict which contacts qualify for phone matching, see
   [docs/extending.md](docs/extending.md).
 

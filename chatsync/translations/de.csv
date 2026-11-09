@@ -95,3 +95,24 @@ Chat,Chat,Contact action
 Only possible in a browser session.,Nur in einer Browser-Sitzung möglich.,
 This chat already belongs to another contact ({0}).,Dieser Chat gehört bereits zu einem anderen Kontakt ({0}).,
 "This is a merged Beeper chat, pick one of its chats instead.","Das ist ein in Beeper zusammengeführter Chat, bitte einen seiner Chats auswählen.",
+Unassigned,Nicht zugeordnet,Chat View
+Show ignored,Ignorierte anzeigen,Chat View
+Search in Beeper,In Beeper suchen,Chat View
+Loading...,Wird geladen...,Chat View
+Try again,Erneut versuchen,Chat View
+Load more,Mehr laden,Chat View
+No unassigned chats,Keine nicht zugeordneten Chats,Chat View
+The chats could not be loaded from Beeper.,Die Chats konnten nicht aus Beeper geladen werden.,Chat View
+The chat could not be loaded.,Der Chat konnte nicht geladen werden.,Chat View
+Ignored,Ignoriert,Chat View
+Unclear,Unklar,Chat View
+Contact exists,Kontakt vorhanden,Chat View
+Suggestion: {0},Vorschlag: {0},Chat View
+Assign,Zuordnen,Chat View
+Assign to {0},{0} zuordnen,Chat View
+Assign contact,Kontakt zuordnen,Chat View
+Create contact,Kontakt anlegen,Chat View
+Ignore,Ignorieren,Chat View
+Stop ignoring,Nicht mehr ignorieren,Chat View
+Preview: nothing is stored until you assign the chat,Vorschau: gespeichert wird erst beim Zuordnen,Chat View
+Contact assigned,Kontakt zugeordnet,Chat View

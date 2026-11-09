@@ -150,6 +150,7 @@ def unassigned_items(account, raws, include_ignored: bool = False) -> list[dict]
 		suggested = None if existing else name_suggestion(account.user, [raw.get("title"), cp.name], names)
 		result[cp.beeper_chat_id] = {
 			**summary(raw, cp),
+			"network_label": networks.label(cp.network),
 			"ambiguous": found.ambiguous,
 			"existing_contact": existing[0] if len(existing) == 1 else None,
 			"ignored": hidden,

@@ -82,6 +82,7 @@ class TestInboxUnassigned(InboxCase):
 		self.assertEqual(fake.list_calls, [(None, api.INBOX_PAGE_SIZE), ("1", api.INBOX_PAGE_SIZE)])
 		self.assertEqual(frappe.db.count("Chat"), before)
 		item = first["items"][0]
+		self.assertEqual(item["network_label"], "WhatsApp")
 		self.assertEqual(
 			(item["ignored"], item["suggested_contact"], item["ambiguous"]), (False, None, False)
 		)

@@ -1033,7 +1033,8 @@ def open_filters(user: str) -> dict | None:
 
 
 def open_chat_counts(user: str | None = None) -> dict:
-	"""Open rows (contacts, else chats) and those waiting for a reply, in one query: for badges."""
+	"""Open rows (contacts, else chats) and those waiting for a reply, in one query: for badges.
+	Group chats count as open but never as waiting: a group message rarely asks the user to answer."""
 	filters = open_filters(user or frappe.session.user)
 	if not filters:
 		return {"open": 0, "waiting": 0}
@@ -1044,6 +1045,7 @@ def open_chat_counts(user: str | None = None) -> dict:
 		.select(
 			frappe.qb.functions("MAX", table.last_incoming_at),
 			frappe.qb.functions("MAX", table.last_outgoing_at),
+			frappe.qb.functions("MAX", table.is_group),
 		)
 		.where(
 			(table.user == filters["user"])
@@ -1053,7 +1055,7 @@ def open_chat_counts(user: str | None = None) -> dict:
 		.groupby(key)
 		.run()
 	)
-	return {"open": len(rows), "waiting": sum(waiting(i, o) for i, o in rows)}
+	return {"open": len(rows), "waiting": sum(waiting(i, o) for i, o, group in rows if not group)}
 
 
 def open_assigned_chats(user: str | None = None, limit: int | None = None) -> list[dict]:

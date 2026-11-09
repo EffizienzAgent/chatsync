@@ -32,7 +32,8 @@ networks Beeper bridges end up in one place.
   two minutes). Chats without new activity take their state from the chat list pages the sync
   reads anyway; open chats not on those pages are asked for one by one, each at most every ten
   minutes and at most 20 per sync. A contact counts as waiting for a reply when the newest message
-  across all its chats came in. A chat
+  across all its chats came in; group chats are listed as open but never count as waiting
+  (`open_chat_counts`). A chat
   that is part of a merged Beeper chat counts as archived with the merged chat, and *Done* archives
   the chat itself, which Beeper mirrors to the merged chat. Each chat also keeps its unread count
   and when the last message came in and went out, so apps can show chats waiting for a reply
@@ -146,7 +147,8 @@ The scheduler syncs every two minutes. Token and transcription keys are stored a
   (`chatsync.api.ignore_chat`), for example private chats. Only the chat ID is kept, on the user's
   Chat Account; an ignored chat no longer shows up there. Host apps may cache the unassigned list:
   the INOCEA Hub's Heute page keeps it in Redis, titles of ignored chats included, for up to two
-  minutes; for unassigned groups that includes the members' names and phone numbers. When the chat's number belongs to exactly
+  minutes; for unassigned groups it keeps only the group's ID, title, member count and suggested
+  parties, no member names or numbers. When the chat's number belongs to exactly
   one readable contact that phone matching skips (see the contact filter), the entry names it as
   `existing_contact`, so it can be assigned instead of creating a duplicate.
 - The chat view (`/desk/chat-view`) has two segments: **Conversations** (assigned chats) and

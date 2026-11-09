@@ -444,6 +444,15 @@ class TestStoredGroups(GroupCase):
 		self.assertEqual((open_row["is_group"], open_row["contact"]), (True, None))
 		self.assertEqual(open_row["contact_name"], "Projekt Alpha")
 
+	def test_groups_are_open_but_never_waiting(self):
+		frappe.db.set_value("Chat", self.chat, {"last_outgoing_at": None, "beeper_archived": 1})
+		before = api.open_chat_counts(USER)
+		frappe.db.set_value("Chat", self.chat, "beeper_archived", 0)
+		after = api.open_chat_counts(USER)
+		self.assertEqual((after["open"], after["waiting"]), (before["open"] + 1, before["waiting"]))
+		[row] = [r for r in api.open_assigned_chats(USER) if r["chat"] == self.chat]
+		self.assertTrue(row["needs_reply"])
+
 	def test_reassign_refuses_groups(self):
 		with self.assertRaises(frappe.ValidationError):
 			api.reassign_chat(self.chat, self.anna)

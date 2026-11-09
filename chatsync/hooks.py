@@ -41,6 +41,9 @@ doc_events = {
 	}
 }
 
+app_include_js = "chatsync.bundle.js"
+app_include_css = "chatsync.bundle.css"
+
 doctype_js = {"Contact": "public/js/contact.js"}
 
 extend_bootinfo = "chatsync.boot.extend_bootinfo"

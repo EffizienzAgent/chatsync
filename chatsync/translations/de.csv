@@ -80,7 +80,7 @@ No messages yet,Noch keine Nachrichten,Chat View
 Start chat,Chat starten,
 Account,Konto,
 Phone,Telefon,
-Nothing is sent yet. Write the first message in the chat view.,Es wird noch nichts gesendet. Die erste Nachricht schreibst du in der Chat-Ansicht.,
+Nothing is sent until you write the first message.,Es wird nichts gesendet – erst deine erste Nachricht.,
 "This contact has no phone number. Add one, or assign an existing chat.","Dieser Kontakt hat keine Telefonnummer. Füge eine hinzu oder ordne einen vorhandenen Chat zu.",
 No WhatsApp or Signal account is connected in Beeper.,In Beeper ist kein WhatsApp- oder Signal-Konto verbunden.,
 Voice message,Sprachnachricht,
@@ -116,3 +116,6 @@ Ignore,Ignorieren,Chat View
 Stop ignoring,Nicht mehr ignorieren,Chat View
 Preview: nothing is stored until you assign the chat,Vorschau: gespeichert wird erst beim Zuordnen,Chat View
 Contact assigned,Kontakt zugeordnet,Chat View
+Open in chat,Im Chat öffnen,Chat View
+Sent,Gesendet,Chat View
+No chat given.,Kein Chat angegeben.,

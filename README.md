@@ -23,9 +23,18 @@ networks Beeper bridges end up in one place.
   conversation, each message marked with its network; replies go to the chat chosen next to the
   input (by default the one the contact last wrote in). On small screens list and conversation
   show one at a time.
-- **From the contact.** The **Chat** button in the contact's activity opens the conversation, or,
-  when there is none yet, starts a WhatsApp or Signal chat with one of the contact's phone numbers
-  (nothing is sent until you write the first message).
+- **From the contact.** The **Chat** button in the contact's activity opens a quick reply: the
+  latest ten messages of the conversation, a composer with the network to send through, and
+  *Open in chat* for the full view. When there is no chat yet, it starts a WhatsApp or Signal chat
+  with one of the contact's phone numbers (nothing is sent until you write the first message) and
+  then opens the quick reply.
+- **Pictures.** People are shown with the contact's image if it has one, else with their Beeper
+  profile picture, else with their initials. Beeper pictures are streamed from the Beeper Server
+  on request, to the chat's owner only, as JPEG, PNG, GIF or WebP checked by their bytes (SVG
+  refused), up to 2 MB; they are never stored, the browser keeps them for a day.
+- **Sending.** A message is handed to Beeper and shown at once with a clock; the view then asks
+  the Beeper Server for the confirmed message (after 0.5, 1, 2, 4 and 8 seconds) and shows a check
+  mark. A message not confirmed by then appears with the next sync.
 - **Chat view.** Read the history, play voice notes, view images and download files, send text
   messages, archive a conversation. Message types the view cannot show (location, contact cards)
   appear as a placeholder naming the type; stickers show as images. Formatting is shown: HTML from Beeper is sanitized to a small

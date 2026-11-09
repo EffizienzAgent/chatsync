@@ -1,7 +1,4 @@
-const CONTEXT = "Chat View";
-const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-const VIDEO_TYPES = ["video/mp4", "video/webm"];
-const MAX_INPUT_LINES = 6;
+const { CONTEXT, avatar, network_chip, server_message, local_time } = chatsync.ui;
 const SEARCH_DELAY = 400;
 
 frappe.pages["chat-view"].on_page_load = function (wrapper) {
@@ -22,53 +19,14 @@ frappe.pages["chat-view"].on_page_show = function (wrapper) {
 	});
 };
 
-function avatar(title) {
-	const [bg, fg] = frappe.get_palette(title || "?");
-	return $(`<div class="chat-avatar"></div>`)
-		.css({ background: `var(${bg})`, color: `var(${fg})` })
-		.text(frappe.get_abbr(title || "?"));
-}
-
-function network_chip(label) {
-	return $(`<span class="chat-network-chip"></span>`).attr("data-network", (label || "").toLowerCase()).text(label);
-}
-
-function plain_text(html) {
-	return new DOMParser().parseFromString(html || "", "text/html").body.textContent;
-}
-
-function server_message(r) {
-	try {
-		const messages = JSON.parse(r?._server_messages || "[]").map((m) => JSON.parse(m).message);
-		return plain_text(messages.join(" "));
-	} catch (e) {
-		return "";
-	}
-}
-
-function local_time(iso) {
-	return iso ? moment(iso).format("YYYY-MM-DD HH:mm:ss") : "";
-}
-
-function unsupported_label(type) {
-	const names = {
-		STICKER: __("Sticker", null, CONTEXT),
-		LOCATION: __("Location", null, CONTEXT),
-		AUDIO: __("Audio", null, CONTEXT),
-	};
-	const name = type ? names[type] || type.toLowerCase() : "";
-	return __("Unsupported message type", null, CONTEXT) + (name ? ` (${name})` : "");
-}
-
-class ChatView {
+class ChatView extends chatsync.ui.ChatPane {
 	constructor(page) {
+		super();
+		this.init_pane();
 		this.page = page;
 		this.page.wrapper.addClass("chat-view-page");
-		this.$body = $(`<div class="chat-view"></div>`).appendTo(page.body);
+		this.$body = $(`<div class="chat-view chatsync-ui"></div>`).appendTo(page.body);
 		this.conversations = [];
-		this.chats = [];
-		this.messages = [];
-		this.ticket = 0;
 		this.segment = "conversations";
 		this.unassigned = { items: [], cursor: null, loaded: false, loading: false, error: null, ticket: 0 };
 		this.make_list_pane();
@@ -206,7 +164,7 @@ class ChatView {
 		const $row = $(`<div class="chat-row-item chat-unassigned-item" role="listitem" tabindex="0"></div>`)
 			.attr("data-key", `unassigned:${item.beeper_chat_id}`)
 			.toggleClass("chat-ignored", Boolean(item.ignored));
-		$row.append(avatar(title));
+		$row.append(avatar(title, item.avatar_url));
 		const $text = $(`<div class="chat-row-text"></div>`).appendTo($row);
 		const $top = $(`<div class="chat-row-top"></div>`).appendTo($text);
 		$(`<span class="chat-row-title"></span>`).text(title).appendTo($top);
@@ -252,6 +210,7 @@ class ChatView {
 		this.chat = null;
 		this.chats = [{ name: null, network: item.network, network_label: item.network_label, title: item.title }];
 		this.title = this.unassigned_title(item);
+		this.avatar_url = item.avatar_url;
 		this.messages = [];
 		this.has_more = false;
 		this.$body.addClass("chat-open");
@@ -406,42 +365,7 @@ class ChatView {
 			this.at_bottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
 			if (scroll.scrollTop < 40) this.load_older();
 		});
-		this.make_composer();
-	}
-
-	make_composer() {
-		const $composer = $(`<footer class="chat-composer"></footer>`).appendTo(this.$conversation);
-		this.$network = $(`<select class="form-control chat-network"></select>`)
-			.attr({ "aria-label": __("Send via", null, CONTEXT), title: __("Send via", null, CONTEXT) })
-			.on("change", () => this.select_chat(this.$network.val()))
-			.appendTo($composer);
-		this.$input = $(`<textarea class="form-control chat-input" rows="1"></textarea>`).appendTo($composer);
-		this.$send = $(`<button type="button" class="btn btn-primary chat-send" disabled></button>`)
-			.attr({ title: __("Send", null, CONTEXT), "aria-label": __("Send", null, CONTEXT) })
-			.append(frappe.utils.icon("send-horizontal", "sm"))
-			.on("click", () => this.send())
-			.appendTo($composer);
-		this.$input.on("input", () => this.update_composer());
-		this.$input.on("keydown", (e) => {
-			if (e.key === "Enter" && !e.shiftKey && !e.originalEvent.isComposing) {
-				e.preventDefault();
-				this.send();
-			}
-		});
-	}
-
-	update_composer() {
-		const input = this.$input[0];
-		const style = getComputedStyle(input);
-		const box = ["paddingTop", "paddingBottom", "borderTopWidth", "borderBottomWidth"].reduce(
-			(sum, key) => sum + (parseFloat(style[key]) || 0),
-			0
-		);
-		const line = parseFloat(style.lineHeight) || 20;
-		input.style.height = "auto";
-		const borders = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
-		input.style.height = `${Math.min(input.scrollHeight + borders, line * MAX_INPUT_LINES + box)}px`;
-		this.$send.prop("disabled", this.sending || !this.$input.val().trim());
+		this.make_composer(this.$conversation);
 	}
 
 	show({ chat, contact, day, select }) {
@@ -496,7 +420,7 @@ class ChatView {
 			? `/desk/chat-view?contact=${encodeURIComponent(row.contact)}`
 			: `/desk/chat-view/${encodeURIComponent(row.chat)}`;
 		const $row = $(`<a class="chat-row-item" role="listitem"></a>`).attr({ "data-key": row.key, href });
-		$row.append(avatar(row.title));
+		$row.append(avatar(row.title, row.avatar_url));
 		const $text = $(`<div class="chat-row-text"></div>`).appendTo($row);
 		const $top = $(`<div class="chat-row-top"></div>`).appendTo($text);
 		$(`<span class="chat-row-title"></span>`).text(row.title).appendTo($top);
@@ -540,6 +464,7 @@ class ChatView {
 			this.chats = [{ name: chat, network: data.chat.network, network_label: data.chat.network_label, title: data.chat.title }];
 			this.chat = chat;
 			this.title = data.chat.title || chat;
+			this.avatar_url = data.chat.avatar_url;
 			this.start(data, day);
 		});
 	}
@@ -555,6 +480,7 @@ class ChatView {
 			this.chats = data.chats;
 			this.chat = data.chats.some((c) => c.name === select) ? select : data.default_chat;
 			this.title = data.contact_name || contact;
+			this.avatar_url = data.avatar_url;
 			this.start(data, day);
 		});
 	}
@@ -581,7 +507,7 @@ class ChatView {
 	}
 
 	render_header() {
-		this.$avatar.empty().append(avatar(this.title));
+		this.$avatar.empty().append(avatar(this.title, this.avatar_url));
 		this.$title.text(this.title);
 		if (this.contact) this.$title.attr("href", frappe.utils.get_form_link("Contact", this.contact));
 		else this.$title.removeAttr("href");
@@ -589,36 +515,12 @@ class ChatView {
 		[...new Set(this.chats.map((c) => c.network_label))].forEach((label) => network_chip(label).appendTo($subtitle));
 	}
 
-	chat_label(chat) {
-		const same = this.chats.filter((c) => c.network_label === chat.network_label).length > 1;
-		return same && chat.title ? `${chat.network_label} · ${chat.title}` : chat.network_label;
-	}
-
-	render_networks() {
-		this.$network.empty();
-		this.chats.forEach((chat) => $(`<option></option>`).val(chat.name).text(this.chat_label(chat)).appendTo(this.$network));
-		this.$network.val(this.chat);
-		this.$network.toggle(this.chats.length > 1);
-		const enabled = Boolean(this.chat);
-		this.$input.prop("disabled", !enabled);
-		this.$input.attr(
-			"placeholder",
-			enabled ? __("Message via {0}", [this.selected().network_label], CONTEXT) : __("No chat to reply to", null, CONTEXT)
-		);
-	}
-
-	selected() {
-		return this.chats.find((c) => c.name === this.chat);
-	}
-
 	network_html() {
 		return frappe.utils.escape_html(this.selected().network_label);
 	}
 
 	select_chat(chat) {
-		this.chat = chat;
-		this.clear_pending();
-		this.render_networks();
+		super.select_chat(chat);
 		this.render_actions();
 	}
 
@@ -697,132 +599,6 @@ class ChatView {
 		[this.contact, ...extra].filter(Boolean).forEach((contact) => frappe.model.remove_from_locals("Contact", contact));
 	}
 
-	day_of(message) {
-		return message.sent_at.slice(0, 10);
-	}
-
-	bubble(message) {
-		const out = message.direction === "Out";
-		const $bubble = $(`<div class="chat-bubble"></div>`);
-		const attachments = message.attachments || [];
-		if (this.mode === "preview" && attachments.length)
-			attachments.forEach((item) => this.attachment_name(item).appendTo($bubble));
-		else if (message.kind === "Voice" && attachments[0]?.too_large) this.too_large().appendTo($bubble);
-		else if (message.kind === "Voice" && message.has_media) this.voice_player(message).appendTo($bubble);
-		else if (attachments.length) attachments.forEach((item, index) => this.attachment(message, item, index).appendTo($bubble));
-		else if (["Voice", "Image", "File"].includes(message.kind))
-			$(`<div class="chat-kind"></div>`).text(__(message.kind, null, CONTEXT)).appendTo($bubble);
-		if (message.kind === "Other" && !attachments.some((item) => item.type === "img"))
-			$(`<div class="chat-kind chat-unsupported"></div>`).text(unsupported_label(message.beeper_type)).appendTo($bubble);
-		if (message.html) $(`<div class="chat-text chat-html"></div>`).html(message.html).appendTo($bubble);
-		if (message.transcript) $(`<div class="chat-transcript"></div>`).text(message.transcript).appendTo($bubble);
-		const $meta = $(`<div class="chat-meta"></div>`).appendTo($bubble);
-		if (this.chats.length > 1 && message.network_label) network_chip(message.network_label).appendTo($meta);
-		if (!out && this.mode === "contact" && message.sender_name && message.sender_name !== this.title)
-			$(`<span class="chat-sender"></span>`).text(message.sender_name).appendTo($meta);
-		$(`<span class="chat-time"></span>`).text(message.sent_at.slice(11, 16)).appendTo($meta);
-		return $(`<div class="chat-row"></div>`).toggleClass("out", out).attr("data-name", message.name).append($bubble);
-	}
-
-	media_url(message, index) {
-		return `/api/method/chatsync.media.serve?message=${encodeURIComponent(message.name)}&index=${index}`;
-	}
-
-	attachment(message, item, index) {
-		if (item.too_large) return this.too_large();
-		const url = this.media_url(message, index);
-		if (item.type === "img" && (!item.mime_type || IMAGE_TYPES.includes(item.mime_type))) {
-			const $image = $(`<img class="chat-image" loading="lazy">`)
-				.attr({ src: url, alt: item.file_name || "" })
-				.on("load", () => this.at_bottom && this.scroll_to_bottom());
-			return $(`<a class="chat-media" target="_blank" rel="noopener noreferrer"></a>`).attr("href", url).append($image);
-		}
-		if (item.type === "video" && VIDEO_TYPES.includes(item.mime_type)) {
-			const video = document.createElement("video");
-			video.className = "chat-video";
-			video.controls = true;
-			video.preload = "none";
-			video.src = url;
-			return $(`<div class="chat-media"></div>`).append(video);
-		}
-		const $file = $(`<a class="chat-file" download></a>`).attr("href", url);
-		$file.append(frappe.utils.icon("paperclip", "sm"));
-		$(`<span class="chat-file-name"></span>`).text(item.file_name || __("File", null, CONTEXT)).appendTo($file);
-		if (item.file_size) $(`<span class="chat-file-size"></span>`).text(this.file_size(item.file_size)).appendTo($file);
-		return $file;
-	}
-
-	attachment_name(item) {
-		const $file = $(`<div class="chat-file"></div>`).append(frappe.utils.icon("paperclip", "sm"));
-		$(`<span class="chat-file-name"></span>`).text(item.file_name || __("File", null, CONTEXT)).appendTo($file);
-		if (item.file_size) $(`<span class="chat-file-size"></span>`).text(this.file_size(item.file_size)).appendTo($file);
-		return $file;
-	}
-
-	too_large() {
-		return $(`<div class="chat-kind"></div>`).text(__("File too large for the preview, please open it in Beeper"));
-	}
-
-	file_size(bytes) {
-		const units = ["B", "KB", "MB", "GB"];
-		let unit = 0;
-		while (bytes >= 1024 && unit < units.length - 1) {
-			bytes /= 1024;
-			unit++;
-		}
-		return `${unit ? bytes.toFixed(1) : bytes} ${units[unit]}`;
-	}
-
-	voice_player(message) {
-		const $voice = $(`<div class="chat-voice"></div>`);
-		const audio = document.createElement("audio");
-		if (!audio.canPlayType("audio/ogg; codecs=opus")) {
-			$(`<span class="chat-kind"></span>`).text(__("Unsupported audio format", null, CONTEXT)).appendTo($voice);
-		} else {
-			audio.controls = true;
-			audio.preload = "none";
-			audio.src = `/api/method/chatsync.voice.play?message=${encodeURIComponent(message.name)}`;
-			$voice.append(audio);
-		}
-		if (!message.transcript) {
-			const $button = $(`<button class="btn btn-xs btn-default"></button>`)
-				.text(__("Transcribe", null, CONTEXT))
-				.appendTo($voice);
-			$button.on("click", () => this.transcribe(message, $button));
-		}
-		return $voice;
-	}
-
-	transcribe(message, $button) {
-		$button.prop("disabled", true).text(__("Transcribing...", null, CONTEXT));
-		frappe
-			.call({ method: "chatsync.voice.transcribe", type: "POST", args: { message: message.name } })
-			.then((r) => {
-				message.transcript = r.message;
-				this.$list.find(`.chat-row[data-name="${CSS.escape(message.name)}"]`).replaceWith(this.bubble(message));
-			})
-			.catch(() => $button.prop("disabled", false).text(__("Transcribe", null, CONTEXT)));
-	}
-
-	render() {
-		this.$list.empty();
-		let day = null;
-		for (const message of this.messages) {
-			if (this.day_of(message) !== day) {
-				day = this.day_of(message);
-				$(`<div class="chat-day"></div>`)
-					.attr("data-day", day)
-					.append($(`<span></span>`).text(frappe.datetime.str_to_user(day)))
-					.appendTo(this.$list);
-			}
-			this.bubble(message).appendTo(this.$list);
-		}
-		if (!this.messages.length)
-			$(`<div class="chat-list-empty"></div>`).text(__("No messages yet", null, CONTEXT)).appendTo(this.$list);
-		this.$pending?.appendTo(this.$list);
-		this.$more.text(this.has_more ? __("Loading older messages...") : "");
-	}
-
 	load_older() {
 		if (!this.has_more || !this.messages.length) return Promise.resolve(false);
 		this.loading ||= this.fetch_older().finally(() => (this.loading = null));
@@ -859,100 +635,7 @@ class ChatView {
 		this.$scroll.scrollTop(target.offsetTop - this.$scroll[0].offsetTop);
 	}
 
-	scroll_to_bottom() {
-		this.at_bottom = true;
-		this.$scroll.scrollTop(this.$scroll[0].scrollHeight);
-	}
-
-	merge(incoming, chat) {
-		const info = this.chats.find((c) => c.name === chat) || {};
-		const known = new Set(this.messages.map((m) => m.name));
-		const added = incoming
-			.filter((m) => !known.has(m.name))
-			.map((m) => ({ ...m, chat, network: info.network, network_label: info.network_label }));
-		this.messages = this.messages
-			.concat(added)
-			.sort((a, b) => a.sent_at.localeCompare(b.sent_at) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-		this.render();
-		return added;
-	}
-
-	show_pending(text) {
-		this.clear_pending();
-		const $meta = $(`<div class="chat-meta"></div>`);
-		if (this.chats.length > 1) network_chip(this.selected().network_label).appendTo($meta);
-		$(`<span class="chat-time"></span>`).text(__("Sending...", null, CONTEXT)).appendTo($meta);
-		this.$pending = $(`<div class="chat-row out chat-pending"></div>`).append(
-			$(`<div class="chat-bubble"></div>`).append($(`<div class="chat-text"></div>`).text(text)).append($meta)
-		);
-		this.$pending.appendTo(this.$list);
-		this.scroll_to_bottom();
-	}
-
-	clear_pending() {
-		this.$pending?.remove();
-		this.$pending = null;
-		clearTimeout(this.poll_timer);
-	}
-
-	poll_sent(chat, text, tries = 4) {
-		const ticket = this.ticket;
-		this.poll_timer = setTimeout(async () => {
-			if (!this.$pending) return;
-			let r;
-			try {
-				r = await frappe.call({ method: "chatsync.api.refresh_messages", type: "POST", args: { chat } });
-			} catch (e) {
-				return this.give_up(ticket);
-			}
-			if (ticket !== this.ticket) return;
-			const added = this.merge(r.message.messages, chat);
-			if (added.some((m) => m.direction === "Out" && m.text === text)) {
-				this.clear_pending();
-				this.scroll_to_bottom();
-			} else if (tries > 1) {
-				this.poll_sent(chat, text, tries - 1);
-			} else {
-				this.give_up(ticket);
-			}
-		}, 2500);
-	}
-
-	give_up(ticket) {
-		if (ticket !== this.ticket) return;
-		this.clear_pending();
-		frappe.show_alert({
-			message: __("Not confirmed yet, it will appear at the next sync", null, CONTEXT),
-			indicator: "orange",
-		});
-	}
-
-	send() {
-		const text = this.$input.val().trim();
-		const chat = this.chat;
-		if (!text || this.sending || !chat) return;
-		const ticket = this.ticket;
-		this.sending = true;
-		this.$input.prop("disabled", true);
-		this.update_composer();
-		frappe
-			.call({ method: "chatsync.api.send_message", args: { chat, text } })
-			.then((r) => {
-				if (ticket !== this.ticket) return;
-				this.$input.val("");
-				const added = this.merge(r.message.messages, chat);
-				if (added.some((m) => m.direction === "Out" && m.text === text)) {
-					this.scroll_to_bottom();
-				} else {
-					this.show_pending(text);
-					this.poll_sent(chat, text);
-				}
-				this.load_conversations();
-			})
-			.always(() => {
-				this.sending = false;
-				this.$input.prop("disabled", false).focus();
-				this.update_composer();
-			});
+	after_send() {
+		this.load_conversations();
 	}
 }

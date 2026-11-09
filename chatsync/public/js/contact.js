@@ -15,17 +15,18 @@ function add_chat_action(frm) {
 async function open_chat(frm) {
 	const contact = frm.doc.name;
 	const count = await frappe.db.count("Chat", { filters: { contact, user: frappe.session.user } });
-	if (count) return frappe.set_route("chat-view", { contact });
+	if (count) return chatsync.ui.quick_reply(contact);
 	const r = await frappe.call({
 		method: "chatsync.api.chat_start_options",
 		type: "GET",
 		args: { contact },
 		freeze: true,
 	});
-	start_chat_dialog(contact, r.message);
+	start_chat_dialog(frm, r.message);
 }
 
-function start_chat_dialog(contact, { accounts, phones }) {
+function start_chat_dialog(frm, { accounts, phones }) {
+	const contact = frm.doc.name;
 	if (!phones.length) return frappe.msgprint(__("This contact has no phone number. Add one, or assign an existing chat."));
 	if (!accounts.length) return frappe.msgprint(__("No WhatsApp or Signal account is connected in Beeper."));
 	const dialog = new frappe.ui.Dialog({
@@ -45,7 +46,7 @@ function start_chat_dialog(contact, { accounts, phones }) {
 			{ fieldname: "phone", fieldtype: "Select", label: __("Phone"), reqd: 1, options: phones, default: phones[0] },
 			{
 				fieldtype: "HTML",
-				options: `<p class="text-muted small">${__("Nothing is sent yet. Write the first message in the chat view.")}</p>`,
+				options: `<p class="text-muted small">${__("Nothing is sent until you write the first message.")}</p>`,
 			},
 		],
 		primary_action_label: __("Start chat"),
@@ -55,8 +56,8 @@ function start_chat_dialog(contact, { accounts, phones }) {
 				.call({ method: "chatsync.api.start_chat", type: "POST", args: { contact, account_id, phone }, freeze: true })
 				.then((r) => {
 					dialog.hide();
-					frappe.model.remove_from_locals("Contact", contact);
-					frappe.set_route("chat-view", { contact, select: r.message });
+					frm.reload_doc();
+					chatsync.ui.quick_reply(contact, r.message);
 				})
 				.catch(() => dialog.enable_primary_action());
 		},

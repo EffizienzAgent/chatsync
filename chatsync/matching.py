@@ -16,6 +16,7 @@ class Counterpart:
 	phone: str | None
 	username: str | None
 	name: str | None
+	image: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ def counterpart(chat: dict) -> Counterpart | None:
 		phone=other.get("phoneNumber"),
 		username=other.get("username"),
 		name=other.get("fullName"),
+		image=other.get("imgURL"),
 	)
 
 

@@ -1,6 +1,7 @@
 import json
 from contextlib import contextmanager
 from datetime import timedelta
+from urllib.parse import urlencode
 
 import frappe
 from frappe.utils import cint, escape_html, now_datetime
@@ -23,6 +24,8 @@ PHONE_NETWORKS = {"whatsapp", "signal"}
 PREVIEW_LIMIT = 100
 MERGED_SEARCH_LIMIT = 10
 INBOX_PAGE_SIZE = 50
+AVATAR_ENDPOINT = "/api/method/chatsync.media.avatar"
+AVATAR_SCHEMES = ("mxc://", "localmxc://", "file://")
 
 
 @contextmanager
@@ -66,7 +69,28 @@ def summary(raw: dict, cp) -> dict:
 		"phone": cp.phone,
 		"username": cp.username,
 		"last_activity": raw.get("lastActivity"),
+		"avatar_url": avatar_endpoint(beeper_chat_id=cp.beeper_chat_id) if avatar_source(raw) else None,
 	}
+
+
+def avatar_source(raw: dict) -> str | None:
+	"""The counterpart's Beeper picture, else the chat's, if the Beeper Server can serve it."""
+	cp = counterpart(raw)
+	for url in (cp and cp.image, raw.get("imgURL")):
+		if url and url.startswith(AVATAR_SCHEMES):
+			return url
+	return None
+
+
+def avatar_endpoint(**args) -> str:
+	return f"{AVATAR_ENDPOINT}?{urlencode(args)}"
+
+
+def avatar_url(contact: str | None, chat: str | None, image: str | None = None) -> str | None:
+	"""The contact's own picture first, else the Beeper picture of `chat`, streamed on request."""
+	if contact and not image:
+		image = frappe.db.get_value("Contact", contact, "image")
+	return image or (avatar_endpoint(chat=chat) if chat else None)
 
 
 def check_contact(contact: str) -> None:
@@ -365,6 +389,7 @@ def get_messages(chat: str, before: str | None = None, limit: int = 200) -> dict
 			"network_label": networks.label(network),
 			"contact": contact,
 			"contact_name": contact_name(contact),
+			"avatar_url": avatar_url(contact, chat),
 		},
 		"messages": [serialize(r) for r in rows],
 		"has_more": has_more,
@@ -426,6 +451,7 @@ def get_contact_messages(contact: str, before: str | None = None, limit: int = 2
 	return {
 		"contact": contact,
 		"contact_name": contact_name(contact),
+		"avatar_url": avatar_url(contact, chats[0]["name"] if chats else None),
 		"chats": chats,
 		"default_chat": default_chat(chats),
 		"messages": result,
@@ -613,6 +639,7 @@ def preview_chat(beeper_chat_id: str, limit: int = 20) -> dict:
 		"title": raw.get("title"),
 		"network": cp.network,
 		"network_label": networks.label(cp.network),
+		"avatar_url": summary(raw, cp)["avatar_url"],
 		"messages": [messages.preview(m) for m in shown[-limit:]],
 	}
 
@@ -630,6 +657,7 @@ def get_conversations() -> list[dict]:
 	for chat in chats:
 		groups.setdefault(chat.contact or chat.name, []).append(chat)
 	names = contact_names([c.contact for c in chats if c.contact])
+	images = contact_images([c.contact for c in chats if c.contact])
 	table = frappe.qb.DocType("Chat Message")
 	rows = []
 	for key, members in groups.items():
@@ -643,6 +671,7 @@ def get_conversations() -> list[dict]:
 		)
 		last = last[0] if last else {}
 		contact = members[0].contact
+		newest = max(members, key=lambda c: str(c.last_message_at or ""))
 		rows.append(
 			{
 				"key": key,
@@ -654,6 +683,7 @@ def get_conversations() -> list[dict]:
 				or max((c.last_message_at for c in members if c.last_message_at), default=None),
 				"direction": last.get("direction"),
 				"preview": messages.summary_text(last) if last else "",
+				"avatar_url": avatar_url(None, newest.name, images.get(contact)),
 			}
 		)
 	return sorted(rows, key=lambda r: str(r["last_message_at"] or ""), reverse=True)
@@ -666,3 +696,12 @@ def contact_names(contacts: list[str]) -> dict[str, str]:
 		fields=["name", "first_name", "last_name"],
 	)
 	return {r.name: " ".join(p for p in (r.first_name, r.last_name) if p) or r.name for r in rows}
+
+
+def contact_images(contacts: list[str]) -> dict[str, str]:
+	rows = frappe.get_all(
+		"Contact",
+		filters={"name": ["in", list(set(contacts)) or [""]], "image": ["is", "set"]},
+		fields=["name", "image"],
+	)
+	return {r.name: r.image for r in rows}

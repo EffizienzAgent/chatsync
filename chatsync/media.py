@@ -6,7 +6,7 @@ from urllib.parse import quote
 import frappe
 from werkzeug.wrappers import Response
 
-from chatsync import api
+from chatsync import api, sync
 from chatsync.beeper import VOICE_FALLBACK, AssetTooLarge, BeeperError
 from chatsync.messages import MAX_BYTES, attachments_of, too_large
 
@@ -14,6 +14,8 @@ GONE = (404, 410)
 UNSATISFIABLE = 416
 RANGE = re.compile(r"bytes=(\d*)-(\d*)")
 DOWNLOAD = "application/octet-stream"
+AVATAR_MAX_BYTES = 2 * 1024 * 1024
+AVATAR_CACHE = "private, max-age=86400"
 VIDEO_TYPES = {"video/mp4", "video/webm"}
 IMAGE_SIGNATURES = (
 	(b"\xff\xd8\xff", "image/jpeg"),
@@ -177,3 +179,27 @@ def serve(message: str, index: int = 0) -> Response:
 		return ranged_response(client, item, range_header)
 	data, upstream = fetch(client.asset, item["src_url"], MAX_BYTES)
 	return media_response(item, data, upstream)
+
+
+@frappe.whitelist(methods=["GET"])
+def avatar(chat: str | None = None, beeper_chat_id: str | None = None) -> Response:
+	"""The Beeper picture of the person in one of the caller's chats, streamed and never stored.
+
+	Without a usable picture the answer is an empty 204, cached like a picture, so the browser
+	shows the initials and does not ask again for a day.
+	"""
+	if chat:
+		api.check_chat(chat, write=True)
+		client, beeper_chat_id = api.chat_client(chat)
+	elif beeper_chat_id:
+		client = sync.client_for(api.session_account())
+	else:
+		frappe.throw(frappe._("No chat given."))
+	source = api.avatar_source(fetch(client.chat, beeper_chat_id))
+	data = fetch(client.asset, source, AVATAR_MAX_BYTES)[0] if source else b""
+	if content_type := sniff_image(data):
+		return respond(data, content_type, disposition("inline", "avatar"), AVATAR_CACHE)
+	response = Response(status=204)
+	response.headers["Cache-Control"] = AVATAR_CACHE
+	response.headers["X-Content-Type-Options"] = "nosniff"
+	return response

@@ -19,7 +19,7 @@ from chatsync.matching import (
 from chatsync.merges import expand, is_merged
 from chatsync.phone import normalize
 
-UNASSIGNED_TIMEOUT = 5
+UNASSIGNED_TIMEOUT = 10
 PHONE_NETWORKS = {"whatsapp", "signal"}
 PREVIEW_LIMIT = 100
 MERGED_SEARCH_LIMIT = 10
@@ -756,8 +756,8 @@ def run_hooks(name: str, **kwargs) -> None:
 def set_chat_done(chat: str | None = None, beeper_chat_id: str | None = None, done: int = 1) -> dict:
 	"""Archives a chat in Beeper ("done"), or with done=0 moves it back to the inbox.
 
-	Browser session only: it changes the user's messenger. A merged member archives its merged
-	chat, as Beeper's inbox shows only that. Takes a stored `chat` or an unassigned direct chat.
+	Browser session only: it changes the user's messenger. Beeper archives a merged chat
+	together with the member that is archived, so the member's own ID is used. Takes a stored `chat` or an unassigned direct chat.
 	"""
 	check_browser_session(DONE_COMMAND, frappe._("Only possible in a browser session."))
 	if bool(chat) == bool(beeper_chat_id):
@@ -773,7 +773,7 @@ def set_chat_done(chat: str | None = None, beeper_chat_id: str | None = None, do
 		account = doc.name
 		client = sync.client_for(doc)
 		raw, _cp = direct_chat(client, beeper_chat_id)
-	beeper_call(client.archive, raw.get("mergedIntoChatID") or beeper_chat_id, done)
+	beeper_call(client.archive, beeper_chat_id, done)
 	stored = frappe.db.get_value("Chat", {"account": account, "beeper_chat_id": beeper_chat_id})
 	if stored:
 		frappe.db.set_value("Chat", stored, "beeper_archived", int(done), update_modified=False)

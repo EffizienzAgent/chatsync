@@ -767,12 +767,11 @@ def set_chat_done(chat: str | None = None, beeper_chat_id: str | None = None, do
 		check_chat(chat, write=True)
 		client, beeper_chat_id = chat_client(chat)
 		account = frappe.db.get_value("Chat", chat, "account")
-		raw = beeper_call(client.chat, beeper_chat_id)
 	else:
 		doc = session_account()
 		account = doc.name
 		client = sync.client_for(doc)
-		raw, _cp = direct_chat(client, beeper_chat_id)
+		direct_chat(client, beeper_chat_id)
 	beeper_call(client.archive, beeper_chat_id, done)
 	stored = frappe.db.get_value("Chat", {"account": account, "beeper_chat_id": beeper_chat_id})
 	if stored:

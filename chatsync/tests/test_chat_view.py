@@ -158,16 +158,29 @@ class TestChatView(ChatsyncTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			api.send_message(self.chat, "hello")
 
-	def test_send_from_session_stores_message(self):
+	def test_send_returns_after_one_beeper_call(self):
 		self.request()
+		calls = []
+		for name in ("send_text", "messages", "chat", "chats"):
+			original = getattr(self.fake, name)
+			setattr(self.fake, name, lambda *a, _n=name, _o=original, **k: (calls.append(_n), _o(*a, **k))[1])
+		before = frappe.db.count("Chat Message", {"chat": self.chat})
+		result = api.send_message(self.chat, "  hello ")
+		self.assertEqual(calls, ["send_text"])
+		self.assertEqual(self.fake.sent, [(self.raw["id"], "hello")])
+		self.assertEqual(result, {"pending_message_id": "pending-1"})
+		self.assertEqual(frappe.db.count("Chat Message", {"chat": self.chat}), before)
+
+	def test_refresh_after_send_stores_confirmed_message_once(self):
+		self.request()
+		api.send_message(self.chat, "hello")
 		sent = message(self.raw["id"], 0, "hello", isSender=True, sendStatus={"status": "SUCCESS"})
 		pending = message(self.raw["id"], 0, "later", isSender=True, sendStatus={"status": "PENDING"})
 		self.fake.latest = [pending, sent]
-		result = api.send_message(self.chat, "  hello ")
-		self.assertEqual(self.fake.sent, [(self.raw["id"], "hello")])
+		result = api.refresh_messages(self.chat)
 		self.assertEqual([(m["text"], m["direction"]) for m in result["messages"]], [("hello", "Out")])
 		self.assertEqual(frappe.get_all("Chat Message", filters={"chat": self.chat}, pluck="text"), ["hello"])
-		api.send_message(self.chat, "again")
+		api.refresh_messages(self.chat)
 		self.assertEqual(frappe.db.count("Chat Message", {"chat": self.chat}), 1)
 
 	def test_send_rejects_empty_text(self):

@@ -492,11 +492,11 @@ def check_browser_session(command: str = SEND_COMMAND, message: str | None = Non
 def send_message(chat: str, text: str) -> dict:
 	"""Text only, browser session only (no API token, no job, no MCP).
 
-	Beeper answers a send with a pendingMessageID only, and its messages carry no field that links
-	the pending ID to the final one (linkedMessageID is the reply target). So no provisional row is
-	stored: the newest page of the chat is fetched and upserted instead, skipping messages still
-	PENDING. A message that is not confirmed yet is stored by the next sync, under its final ID, so
-	no duplicate can arise (and sync's remove_vanished would drop a stray pending-ID row anyway).
+	Returns as soon as Beeper accepted the message, with its pendingMessageID. Beeper's messages
+	carry no field that links that ID to the final one (linkedMessageID is the reply target), so
+	nothing is stored here: the client polls refresh_messages, which stores the newest page and
+	skips messages still PENDING. A message not confirmed by then is stored by the next sync under
+	its final ID, so no duplicate can arise.
 	"""
 	check_browser_session()
 	check_chat(chat, write=True)
@@ -504,8 +504,8 @@ def send_message(chat: str, text: str) -> dict:
 	if not text:
 		frappe.throw(frappe._("The message is empty."))
 	client, beeper_chat_id = chat_client(chat)
-	beeper_call(client.send_text, beeper_chat_id, text)
-	return {"messages": pull_latest(chat, client, beeper_chat_id)}
+	sent = beeper_call(client.send_text, beeper_chat_id, text)
+	return {"pending_message_id": (sent or {}).get("pendingMessageID")}
 
 
 def chat_client(chat: str):
@@ -531,7 +531,7 @@ def pull_latest(chat: str, client, beeper_chat_id: str) -> list[dict]:
 
 @frappe.whitelist(methods=["POST"])
 def refresh_messages(chat: str) -> dict:
-	"""Read-only: fetch the newest page from Beeper and store it (used after a send to catch the confirmation)."""
+	"""Fetches the newest page from Beeper and stores it; the client polls it after a send."""
 	check_chat(chat, write=True)
 	client, beeper_chat_id = chat_client(chat)
 	return {"messages": pull_latest(chat, client, beeper_chat_id)}

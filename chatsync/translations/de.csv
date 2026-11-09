@@ -119,3 +119,22 @@ Contact assigned,Kontakt zugeordnet,Chat View
 Open in chat,Im Chat öffnen,Chat View
 Sent,Gesendet,Chat View
 No chat given.,Kein Chat angegeben.,
+Done,Erledigt,Chat View
+Reopen,Wieder öffnen,Chat View
+Only open,Nur offene,Chat View
+Done (archived in Beeper),Erledigt (in Beeper archiviert),Chat View
+Move the chat back to the Beeper inbox,Chat zurück in den Beeper-Posteingang holen,Chat View
+Archive in Beeper,In Beeper archivieren,Chat View
+"Done, archived in Beeper","Erledigt, in Beeper archiviert",Chat View
+Back in the Beeper inbox,Wieder im Beeper-Posteingang,Chat View
+React,Reagieren,Chat View
+Remove my reaction,Meine Reaktion entfernen,Chat View
+Give either a chat or a Beeper chat ID.,Entweder einen Chat oder eine Beeper-Chat-ID angeben.,
+Reacting is only possible from the chat window.,Reagieren ist nur im Chatfenster möglich.,
+Invalid reaction.,Ungültige Reaktion.,
+No permission for Chat Message {0},Keine Berechtigung für Chat-Nachricht {0},
+Archived in Beeper,In Beeper archiviert,
+Unread Count,Ungelesen,
+Last Incoming At,Zuletzt eingegangen,
+Last Outgoing At,Zuletzt gesendet,
+Reactions,Reaktionen,

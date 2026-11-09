@@ -58,6 +58,12 @@ class ChatView extends chatsync.ui.ChatPane {
 			.appendTo($filter);
 		$(`<span></span>`).text(__("Show ignored", null, CONTEXT)).appendTo($filter);
 		this.$filter = $filter.hide();
+		const $open_filter = $(`<label class="chat-show-ignored chat-open-only"></label>`).appendTo($pane);
+		this.$open_only = $(`<input type="checkbox">`)
+			.on("change", () => this.render_conversations())
+			.appendTo($open_filter);
+		$(`<span></span>`).text(__("Only open", null, CONTEXT)).appendTo($open_filter);
+		this.$open_filter = $open_filter;
 		this.$conversations = $(`<div class="chat-conversations" role="list"></div>`).appendTo($pane);
 		this.$unassigned = $(`<div class="chat-conversations chat-unassigned" role="list"></div>`).appendTo($pane).hide();
 		this.mark_segment();
@@ -80,6 +86,7 @@ class ChatView extends chatsync.ui.ChatPane {
 		this.$conversations.toggle(!unassigned);
 		this.$unassigned.toggle(unassigned);
 		this.$filter.toggle(unassigned);
+		this.$open_filter.toggle(!unassigned);
 		const placeholder = unassigned ? __("Search in Beeper", null, CONTEXT) : __("Search", null, CONTEXT);
 		this.$search.attr({ placeholder, "aria-label": placeholder });
 	}
@@ -356,6 +363,10 @@ class ChatView extends chatsync.ui.ChatPane {
 		const $titles = $(`<div class="chat-titles"></div>`).appendTo($header);
 		this.$title = $(`<a class="chat-title"></a>`).appendTo($titles);
 		this.$subtitle = $(`<div class="chat-subtitle"></div>`).appendTo($titles);
+		this.$done = $(`<button type="button" class="btn btn-default btn-sm chat-done"></button>`)
+			.on("click", () => this.toggle_done().catch(() => {}))
+			.appendTo($header)
+			.hide();
 		this.$actions = $(`<div class="chat-preview-actions"></div>`).appendTo(this.$conversation).hide();
 		this.$scroll = $(`<div class="chat-scroll"></div>`).appendTo(this.$conversation);
 		this.$more = $(`<div class="chat-more"></div>`).appendTo(this.$scroll);
@@ -388,6 +399,7 @@ class ChatView extends chatsync.ui.ChatPane {
 		this.page.set_title(__("Conversations", null, CONTEXT));
 		this.$body.removeClass("chat-open");
 		this.$conversation.hide();
+		this.$done.hide();
 		this.$empty.show();
 		this.mark_active();
 	}
@@ -401,13 +413,16 @@ class ChatView extends chatsync.ui.ChatPane {
 
 	render_conversations() {
 		const query = (this.$search.val() || "").trim().toLowerCase();
+		const open_only = this.$open_only.prop("checked");
 		const rows = this.conversations.filter(
-			(row) => !query || `${row.title} ${row.networks.join(" ")} ${row.preview}`.toLowerCase().includes(query)
+			(row) =>
+				!(open_only && row.archived) &&
+				(!query || `${row.title} ${row.networks.join(" ")} ${row.preview}`.toLowerCase().includes(query))
 		);
 		this.$conversations.empty();
 		if (!rows.length) {
 			$(`<div class="chat-list-empty"></div>`)
-				.text(query ? __("No matches", null, CONTEXT) : __("No conversations yet", null, CONTEXT))
+				.text(query || open_only ? __("No matches", null, CONTEXT) : __("No conversations yet", null, CONTEXT))
 				.appendTo(this.$conversations);
 			return;
 		}
@@ -419,7 +434,10 @@ class ChatView extends chatsync.ui.ChatPane {
 		const href = row.contact
 			? `/desk/chat-view?contact=${encodeURIComponent(row.contact)}`
 			: `/desk/chat-view/${encodeURIComponent(row.chat)}`;
-		const $row = $(`<a class="chat-row-item" role="listitem"></a>`).attr({ "data-key": row.key, href });
+		const $row = $(`<a class="chat-row-item" role="listitem"></a>`)
+			.attr({ "data-key": row.key, href })
+			.toggleClass("chat-archived", Boolean(row.archived));
+		if (row.archived) $row.attr("title", __("Done (archived in Beeper)", null, CONTEXT));
 		$row.append(avatar(row.title, row.avatar_url));
 		const $text = $(`<div class="chat-row-text"></div>`).appendTo($row);
 		const $top = $(`<div class="chat-row-top"></div>`).appendTo($text);
@@ -461,7 +479,15 @@ class ChatView extends chatsync.ui.ChatPane {
 			this.mode = "chat";
 			this.key = chat;
 			this.contact = null;
-			this.chats = [{ name: chat, network: data.chat.network, network_label: data.chat.network_label, title: data.chat.title }];
+			this.chats = [
+				{
+					name: chat,
+					network: data.chat.network,
+					network_label: data.chat.network_label,
+					title: data.chat.title,
+					archived: data.chat.archived,
+				},
+			];
 			this.chat = chat;
 			this.title = data.chat.title || chat;
 			this.avatar_url = data.chat.avatar_url;
@@ -507,12 +533,53 @@ class ChatView extends chatsync.ui.ChatPane {
 	}
 
 	render_header() {
+		this.render_done();
 		this.$avatar.empty().append(avatar(this.title, this.avatar_url));
 		this.$title.text(this.title);
 		if (this.contact) this.$title.attr("href", frappe.utils.get_form_link("Contact", this.contact));
 		else this.$title.removeAttr("href");
 		const $subtitle = this.$subtitle.empty();
 		[...new Set(this.chats.map((c) => c.network_label))].forEach((label) => network_chip(label).appendTo($subtitle));
+	}
+
+	is_done() {
+		return this.chats.length > 0 && this.chats.every((c) => c.archived);
+	}
+
+	render_done() {
+		if (!["chat", "contact"].includes(this.mode) || !this.chats.length) return this.$done.hide();
+		const done = this.is_done();
+		this.$done
+			.show()
+			.prop("disabled", false)
+			.toggleClass("btn-primary", !done)
+			.toggleClass("btn-default", done)
+			.attr("title", done ? __("Move the chat back to the Beeper inbox", null, CONTEXT) : __("Archive in Beeper", null, CONTEXT))
+			.empty()
+			.append(frappe.utils.icon(done ? "rotate-ccw" : "check", "sm"))
+			.append($(`<span></span>`).text(done ? __("Reopen", null, CONTEXT) : __("Done", null, CONTEXT)));
+	}
+
+	async toggle_done() {
+		const done = !this.is_done();
+		const chats = done ? this.chats.filter((c) => !c.archived) : [this.selected() || this.chats[0]];
+		const ticket = this.ticket;
+		this.$done.prop("disabled", true);
+		try {
+			for (const chat of chats) {
+				await frappe.call({ method: "chatsync.api.set_chat_done", args: { chat: chat.name, done: done ? 1 : 0 } });
+				chat.archived = done;
+			}
+		} finally {
+			if (ticket === this.ticket) this.render_done();
+		}
+		const row = this.conversations.find((r) => r.key === this.key);
+		if (row) row.archived = this.is_done();
+		this.render_conversations();
+		frappe.show_alert({
+			message: done ? __("Done, archived in Beeper", null, CONTEXT) : __("Back in the Beeper inbox", null, CONTEXT),
+			indicator: "green",
+		});
 	}
 
 	network_html() {

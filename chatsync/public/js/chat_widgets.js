@@ -5,6 +5,8 @@ const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 const VIDEO_TYPES = ["video/mp4", "video/webm"];
 const MAX_INPUT_LINES = 6;
 const POLL_DELAYS = [500, 1000, 2000, 4000, 8000];
+const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+const RECONCILE_DELAY = 2000;
 
 function avatar(title, url) {
 	const [bg, fg] = frappe.get_palette(title || "?");
@@ -52,6 +54,14 @@ function unsupported_label(type) {
 
 function compare(a, b) {
 	return a.sent_at.localeCompare(b.sent_at) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+}
+
+function is_emoji(key) {
+	return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(key);
+}
+
+function same_reactions(a, b) {
+	return JSON.stringify(a || []) === JSON.stringify(b || []);
 }
 
 function now_time() {
@@ -166,7 +176,92 @@ class ChatPane {
 		if (message.html) $(`<div class="chat-text chat-html"></div>`).html(message.html).appendTo($bubble);
 		if (message.transcript) $(`<div class="chat-transcript"></div>`).text(message.transcript).appendTo($bubble);
 		this.meta(message, $(`<div class="chat-meta"></div>`).appendTo($bubble));
-		return $(`<div class="chat-row"></div>`).toggleClass("out", out).attr("data-name", message.name).append($bubble);
+		const $row = $(`<div class="chat-row"></div>`).toggleClass("out", out).attr("data-name", message.name).append($bubble);
+		if (message.reactions?.length) this.reaction_chips(message).appendTo($row);
+		if (this.can_react(message)) this.reaction_picker(message).appendTo($row);
+		return $row;
+	}
+
+	can_react(message) {
+		return ["chat", "contact"].includes(this.mode) && Boolean(message.chat);
+	}
+
+	reaction_chips(message) {
+		const $chips = $(`<div class="chat-reactions"></div>`);
+		for (const group of message.reactions) {
+			const names = group.mine ? [__("You", null, CONTEXT)] : [];
+			const others = group.count - (group.mine ? 1 : 0);
+			if (others > 0) names.push(others > 1 ? `${this.title} +${others - 1}` : this.title);
+			$(`<span class="chat-reaction"></span>`)
+				.toggleClass("mine", group.mine)
+				.toggleClass("chat-reaction-text", !is_emoji(group.key))
+				.attr("title", names.join(", "))
+				.text(group.count > 1 ? `${group.key} ${group.count}` : group.key)
+				.appendTo($chips);
+		}
+		return $chips;
+	}
+
+	reaction_picker(message) {
+		const $picker = $(`<div class="chat-picker" role="toolbar"></div>`).attr("aria-label", __("React", null, CONTEXT));
+		const mine = (message.reactions || []).filter((group) => group.mine);
+		for (const key of REACTIONS) {
+			const active = mine.some((group) => group.key === key);
+			$(`<button type="button" class="chat-pick"></button>`)
+				.toggleClass("active", active)
+				.attr({ title: key, "aria-pressed": String(active) })
+				.text(key)
+				.on("click", () => this.react(message, key, active))
+				.appendTo($picker);
+		}
+		if (mine.length)
+			$(`<button type="button" class="chat-pick chat-unpick"></button>`)
+				.attr({ title: __("Remove my reaction", null, CONTEXT), "aria-label": __("Remove my reaction", null, CONTEXT) })
+				.append(frappe.utils.icon("x", "xs"))
+				.on("click", () => mine.forEach((group) => this.react(message, group.key, true)))
+				.appendTo($picker);
+		return $picker;
+	}
+
+	set_reactions(message, reactions) {
+		message.reactions = reactions;
+		this.$list.find(`.chat-row[data-name="${CSS.escape(message.name)}"]`).replaceWith(this.bubble(message));
+	}
+
+	react(message, key, remove) {
+		const before = message.reactions || [];
+		let after = before.map((group) => ({ ...group }));
+		const own = after.find((group) => group.key === key);
+		if (remove && own?.mine) {
+			own.count -= 1;
+			own.mine = false;
+			after = after.filter((group) => group.count > 0);
+		} else if (!remove && !own) {
+			after.push({ key, count: 1, mine: true });
+		} else if (!remove && !own.mine) {
+			Object.assign(own, { count: own.count + 1, mine: true });
+		}
+		this.set_reactions(message, after);
+		const ticket = this.ticket;
+		frappe
+			.call({ method: "chatsync.api.react", args: { message: message.name, key, remove: remove ? 1 : 0 } })
+			.then((r) => {
+				if (ticket !== this.ticket) return;
+				this.set_reactions(message, r.message.reactions);
+				this.reconcile(message.chat);
+			})
+			.catch(() => ticket === this.ticket && this.set_reactions(message, before));
+	}
+
+	reconcile(chat) {
+		const ticket = this.ticket;
+		clearTimeout(this.reconcile_timer);
+		this.reconcile_timer = setTimeout(() => {
+			frappe
+				.call({ method: "chatsync.api.refresh_messages", type: "POST", silent: true, args: { chat } })
+				.then((r) => ticket === this.ticket && this.merge(r.message.messages, chat))
+				.catch(() => {});
+		}, RECONCILE_DELAY);
 	}
 
 	media_url(message, index) {
@@ -276,6 +371,11 @@ class ChatPane {
 	merge(incoming, chat) {
 		const info = this.chats.find((c) => c.name === chat) || {};
 		const known = new Set(this.messages.map((m) => m.name));
+		const by_name = new Map(this.messages.map((m) => [m.name, m]));
+		incoming.forEach((m) => {
+			const current = by_name.get(m.name);
+			if (current && !same_reactions(current.reactions, m.reactions)) current.reactions = m.reactions;
+		});
 		const oldest = this.has_more ? this.messages[0] : null;
 		const added = incoming
 			.filter((m) => !known.has(m.name) && !(oldest && compare(m, oldest) < 0))
@@ -319,6 +419,7 @@ class ChatPane {
 	}
 
 	clear_pending() {
+		clearTimeout(this.reconcile_timer);
 		this.pending = [];
 		this.timers.forEach((timer) => clearTimeout(timer));
 		this.timers.clear();

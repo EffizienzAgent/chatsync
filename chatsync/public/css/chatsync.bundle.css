@@ -29,8 +29,21 @@
 .chatsync-ui .chat-more { text-align: center; color: var(--text-muted); font-size: var(--text-sm); }
 .chatsync-ui .chat-day { position: sticky; top: 0; z-index: 1; display: flex; justify-content: center; padding: var(--padding-sm) 0; pointer-events: none; }
 .chatsync-ui .chat-day span { padding: 2px 10px; border-radius: 999px; background: var(--card-bg); box-shadow: var(--shadow-xs); font-size: var(--text-xs); color: var(--text-muted); }
-.chatsync-ui .chat-row { display: flex; margin-bottom: 6px; }
+.chatsync-ui .chat-row { position: relative; display: flex; flex-wrap: wrap; margin-bottom: 6px; }
 .chatsync-ui .chat-row.out { justify-content: flex-end; }
+.chatsync-ui .chat-reactions { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px; margin-top: -4px; padding: 0 8px; }
+.chatsync-ui .chat-row.out .chat-reactions { justify-content: flex-end; }
+.chatsync-ui .chat-reaction { position: relative; padding: 0 6px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--card-bg); font-size: var(--text-xs); line-height: 18px; cursor: default; }
+.chatsync-ui .chat-reaction.mine { border-color: var(--blue-300, #93c5fd); background: var(--blue-50, #eff6ff); }
+.chatsync-ui .chat-reaction-text { color: var(--text-muted); }
+[data-theme="dark"] .chatsync-ui .chat-reaction.mine { border-color: rgba(59, 130, 246, .6); background: rgba(59, 130, 246, .22); }
+.chatsync-ui .chat-picker { position: absolute; top: -18px; left: 8px; z-index: 2; display: none; gap: 2px; padding: 2px 4px; border-radius: 999px; background: var(--card-bg); box-shadow: var(--shadow-md); }
+.chatsync-ui .chat-row.out .chat-picker { left: auto; right: 8px; }
+.chatsync-ui .chat-row:hover .chat-picker, .chatsync-ui .chat-row:focus-within .chat-picker { display: flex; }
+.chatsync-ui .chat-pick { width: 26px; height: 26px; padding: 0; border: none; border-radius: 50%; background: none; font-size: 15px; line-height: 26px; display: inline-flex; align-items: center; justify-content: center; }
+.chatsync-ui .chat-pick:hover, .chatsync-ui .chat-pick.active { background: var(--control-bg); }
+.chatsync-ui .chat-pick.active { box-shadow: inset 0 0 0 1px var(--blue-300, #93c5fd); }
+.chatsync-ui .chat-unpick .icon { stroke: var(--text-muted); }
 .chatsync-ui .chat-bubble { max-width: 65%; min-width: 72px; padding: 6px 10px 4px; border-radius: 12px; border-bottom-left-radius: 4px; background: var(--chat-in-bg); box-shadow: var(--shadow-xs); overflow-wrap: anywhere; }
 .chatsync-ui .chat-row.out .chat-bubble { background: var(--chat-out-bg); color: var(--chat-out-fg); border-bottom-left-radius: 12px; border-bottom-right-radius: 4px; }
 .chatsync-ui .chat-pending .chat-bubble { opacity: .7; }

@@ -29,6 +29,10 @@
 .chat-view .chat-show-ignored input { margin: 0; }
 .chat-view .chat-unassigned-item { cursor: pointer; }
 .chat-view .chat-unassigned-item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.chat-view .chat-row-item.chat-archived .chat-row-title, .chat-view .chat-row-item.chat-archived .chat-row-preview, .chat-view .chat-row-item.chat-archived .chat-avatar { opacity: .55; }
+.chat-view .chat-row-item.chat-archived .chat-row-title { font-weight: normal; }
+.chat-view .chat-done { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.chat-view .chat-done .icon { stroke: currentColor; }
 .chat-view .chat-unassigned-item.chat-ignored .chat-row-title, .chat-view .chat-unassigned-item.chat-ignored .chat-avatar { opacity: .55; }
 .chat-view .chat-row-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
 .chat-view .chat-badge { padding: 0 6px; border-radius: 999px; font-size: var(--text-xs); line-height: 18px; background: var(--control-bg); color: var(--text-color); }

@@ -33,7 +33,7 @@ networks Beeper bridges end up in one place.
   minutes and at most 20 per sync. A contact counts as waiting for a reply when the newest message
   across all its chats came in. A chat
   that is part of a merged Beeper chat counts as archived with the merged chat, and *Done* archives
-  the merged chat, since that is what Beeper's inbox shows. Each chat also keeps its unread count
+  the chat itself, which Beeper mirrors to the merged chat. Each chat also keeps its unread count
   and when the last message came in and went out, so apps can show chats waiting for a reply
   (`chatsync.api.open_assigned_chats`, one row per contact, waiting ones first).
 - **Reactions.** Reactions show as chips under the message (yours highlighted, "You" or the

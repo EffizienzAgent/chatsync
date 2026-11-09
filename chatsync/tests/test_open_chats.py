@@ -186,14 +186,23 @@ class TestSetChatDone(OpenChatsCase):
 			],
 		)
 
-	def test_merged_member_archives_the_merged_chat(self):
+	def test_merged_member_is_archived_by_its_own_id(self):
 		parent = {**chat_json(), "merge": {"chatIDs": [self.raw["id"]]}, "isArchived": False}
 		self.raw["mergedIntoChatID"] = parent["id"]
 		self.fake.chat_items.append(parent)
 		self.browser()
 		api.set_chat_done(chat=self.chat)
-		self.assertEqual(self.fake.archived, [(parent["id"], True)])
+		self.assertEqual(self.fake.archived, [(self.raw["id"], True)])
 		self.assertEqual(frappe.db.get_value("Chat", self.chat, "beeper_archived"), 1)
+
+	def test_merged_member_is_unarchived_by_its_own_id(self):
+		parent = {**chat_json(), "merge": {"chatIDs": [self.raw["id"]]}, "isArchived": True}
+		self.raw["mergedIntoChatID"] = parent["id"]
+		self.fake.chat_items.append(parent)
+		self.browser()
+		api.set_chat_done(chat=self.chat, done=0)
+		self.assertEqual(self.fake.archived, [(self.raw["id"], False)])
+		self.assertEqual(frappe.db.get_value("Chat", self.chat, "beeper_archived"), 0)
 
 	def test_refuses_token_auth(self):
 		self.browser(authorization="token a:b")

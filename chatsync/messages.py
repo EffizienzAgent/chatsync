@@ -8,7 +8,8 @@ from frappe.utils import get_system_timezone
 from chatsync import formatting
 
 SKIPPED_TYPES = {"REACTION", "NOTICE"}
-KINDS = {"TEXT": "Text", "VOICE": "Voice", "IMAGE": "Image", "FILE": "File", "VIDEO": "File"}
+# Signal sends voice notes as AUDIO (audio/aac, .m4a), WhatsApp as VOICE.
+KINDS = {"TEXT": "Text", "VOICE": "Voice", "AUDIO": "Voice", "IMAGE": "Image", "FILE": "File", "VIDEO": "File"}
 TYPE_BY_KIND = {"Voice": "audio", "Image": "img"}
 PUBLIC_KEYS = ("type", "mime_type", "file_name", "file_size")
 MAX_BYTES = 50 * 1024 * 1024

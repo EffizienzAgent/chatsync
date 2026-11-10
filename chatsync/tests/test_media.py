@@ -218,6 +218,13 @@ class TestMedia(ChatsyncTestCase):
 		self.assertEqual(response.mimetype, "audio/ogg")
 		self.assertEqual(response.headers["Accept-Ranges"], "bytes")
 
+	def test_signal_audio_is_a_voice_message(self):
+		self.fake.assets["mxc://a"] = (b"\x00\x00\x00\x1cftypM4A ", "audio/aac")
+		name = self.store("AUDIO", attachment("mxc://a", "audio", "audio/aac", "voice.m4a"))
+		kind, beeper_type = frappe.db.get_value("Chat Message", name, ["kind", "beeper_type"])
+		self.assertEqual((kind, beeper_type), ("Voice", None))
+		self.assertEqual(self.serve(name).mimetype, "audio/aac")
+
 	def test_message_from_before_attachments_were_stored(self):
 		name = self.image(PNG)
 		frappe.db.set_value("Chat Message", name, "attachments", None)

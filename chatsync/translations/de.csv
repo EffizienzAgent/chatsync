@@ -118,6 +118,7 @@ Preview: nothing is stored until you assign the chat,Vorschau: gespeichert wird 
 Contact assigned,Kontakt zugeordnet,Chat View
 Open in chat,Im Chat öffnen,Chat View
 Sent,Gesendet,Chat View
+Seen {0},Gelesen {0},Chat View
 No chat given.,Kein Chat angegeben.,
 Done,Erledigt,Chat View
 Reopen,Wieder öffnen,Chat View

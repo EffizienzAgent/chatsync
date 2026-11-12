@@ -283,11 +283,13 @@ class ChatPane {
 		if (message.direction !== "Out" && !this.is_group && this.mode === "contact" && message.sender_name && message.sender_name !== this.title)
 			$(`<span class="chat-sender"></span>`).text(message.sender_name).appendTo($meta);
 		$(`<span class="chat-time"></span>`).text(message.sent_at.slice(11, 16)).appendTo($meta);
-		if (this.confirmed.has(message.name))
-			$(`<span class="chat-state"></span>`)
-				.attr("title", __("Sent", null, CONTEXT))
-				.append(frappe.utils.icon("check", "xs"))
-				.appendTo($meta);
+		if (message.direction !== "Out") return;
+		const seen = message.seen_at;
+		$(`<span class="chat-state"></span>`)
+			.toggleClass("seen", Boolean(seen))
+			.attr("title", seen ? __("Seen {0}", [frappe.datetime.str_to_user(seen)], CONTEXT) : __("Sent", null, CONTEXT))
+			.append(frappe.utils.icon(seen ? "check-check" : "check", "xs"))
+			.appendTo($meta);
 	}
 
 	bubble(message) {

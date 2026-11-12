@@ -87,6 +87,18 @@ def grouped_reactions(value: str | None) -> list[dict]:
 	return list(groups.values())
 
 
+def seen_at(raw: dict) -> datetime | None:
+	"""Earliest read receipt of an outgoing message. Beeper sends `seen` as {participantID: ISO time}; `true` without a time
+	means read at an unknown moment and falls back to the message time."""
+	seen = raw.get("seen")
+	if not raw.get("isSender") or not seen:
+		return None
+	if isinstance(seen, dict):
+		times = [to_site_time(t) for t in seen.values() if isinstance(t, str) and t]
+		return min(times) if times else to_site_time(raw["timestamp"])
+	return to_site_time(raw["timestamp"])
+
+
 def values_from(raw: dict, counterpart_id: str | None = None, self_id: str | None = None) -> dict:
 	attachments = raw.get("attachments") or []
 	reactions = reactions_from(raw, counterpart_id, self_id)
@@ -103,6 +115,7 @@ def values_from(raw: dict, counterpart_id: str | None = None, self_id: str | Non
 		"media_url": attachments[0].get("srcURL") if attachments else None,
 		"attachments": json.dumps([from_beeper(a) for a in attachments]) if attachments else None,
 		"reactions": json.dumps(reactions, ensure_ascii=False) if reactions else None,
+		"seen_at": seen_at(raw),
 	}
 
 

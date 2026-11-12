@@ -20,6 +20,7 @@
   "media_url",
   "attachments",
   "reactions",
+  "seen_at",
   "transcript",
   "transcript_provider"
  ],
@@ -97,6 +98,13 @@
    "fieldname": "reactions",
    "fieldtype": "JSON",
    "label": "Reactions"
+  },
+  {
+   "fieldname": "seen_at",
+   "fieldtype": "Datetime",
+   "label": "Seen At",
+   "read_only": 1,
+   "description": "Earliest time the other side read this outgoing message (Beeper seen)"
   },
   {
    "fieldname": "transcript",

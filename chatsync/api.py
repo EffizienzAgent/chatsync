@@ -556,6 +556,7 @@ MESSAGE_FIELDS = [
 	"media_url",
 	"attachments",
 	"reactions",
+	"seen_at",
 ]
 
 
@@ -567,6 +568,7 @@ def serialize(row: dict) -> dict:
 		**row,
 		"reactions": messages.grouped_reactions(row.get("reactions")),
 		"sent_at": str(row["sent_at"]),
+		"seen_at": str(row["seen_at"]) if row.get("seen_at") else None,
 		"html": formatting.render(row["text"]),
 		"has_media": bool(attachments),
 		"attachments": messages.public(attachments),

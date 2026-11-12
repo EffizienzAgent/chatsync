@@ -89,6 +89,8 @@
 .chatsync-ui .chat-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .chatsync-ui .chat-state { display: inline-flex; }
 .chatsync-ui .chat-state .icon { width: 12px; height: 12px; stroke: currentColor; }
+.chatsync-ui .chat-state.seen { color: var(--blue-500, #3b82f6); }
+[data-theme="dark"] .chatsync-ui .chat-state.seen { color: #60a5fa; }
 
 .chatsync-quick-dialog .modal-body { padding: 0; }
 .chatsync-quick { display: flex; flex-direction: column; background: var(--chat-canvas); }

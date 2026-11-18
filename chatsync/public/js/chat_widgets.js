@@ -8,6 +8,7 @@ const POLL_DELAYS = [500, 1000, 2000, 4000, 8000];
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 const RECONCILE_DELAY = 2000;
 const RECEIPT_DELAYS = [15000, 60000, 180000];
+const LIVE_INTERVAL = 15000;
 const VOICE_TYPES = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/mp4"];
 const VOICE_MAX_SECONDS = 15 * 60;
 const RECEIPTS = {
@@ -211,6 +212,36 @@ class ChatPane {
 		this.timers = new Set();
 		this.confirmed = new Set();
 		this.staged = [];
+		this.start_live();
+	}
+
+	/** While the pane is visible, its chats are refreshed from Beeper every 15 seconds: new messages and
+	receipts show up without waiting for the sync. Stops by itself once the pane leaves the page. */
+	start_live() {
+		clearInterval(this.live_timer);
+		this.live_timer = setInterval(() => {
+			const scroll = this.$scroll?.[0];
+			if (scroll && !scroll.isConnected) return clearInterval(this.live_timer);
+			if (!scroll || document.hidden || !scroll.offsetParent || this.sending || this.mode === "preview") return;
+			const ticket = this.ticket;
+			(this.chats || []).slice(0, 3).forEach(({ name }) =>
+				frappe
+					.call({ method: "chatsync.api.refresh_messages", type: "POST", silent: true, args: { chat: name } })
+					.then((r) => ticket === this.ticket && this.has_news(r.message.messages) && this.merge(r.message.messages, name))
+					.catch(() => {})
+			);
+		}, LIVE_INTERVAL);
+	}
+
+	/** Re-rendering replaces the list (and stops a playing voice note), so only when something changed. */
+	has_news(incoming) {
+		const by_name = new Map(this.messages.map((m) => [m.name, m]));
+		const oldest = this.has_more ? this.messages[0] : null;
+		return incoming.some((m) => {
+			const current = by_name.get(m.name);
+			if (!current && oldest && compare(m, oldest) < 0) return false;
+			return !current || (m.receipt && m.receipt !== current.receipt) || !same_reactions(current.reactions, m.reactions);
+		});
 	}
 
 	make_composer($parent, $network_parent) {

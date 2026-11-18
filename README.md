@@ -65,6 +65,10 @@ networks Beeper bridges end up in one place.
   checks (read), as far as the network reports it (`sendStatus.deliveredToUsers`, `seen`), and a
   warning sign if the send failed. They are updated with every sync for the last two days and,
   after a send, a few more times while the conversation is open.
+- **Live while open.** A conversation that is visible on screen asks the Beeper Server for its
+  newest messages every 15 seconds (at most three chats per conversation, not while the tab is
+  hidden), so new messages and receipts show up without waiting for the sync. The list is only
+  re-rendered when something changed, so a playing voice note keeps playing.
 - **Chat view.** Read the history, play voice notes, view images and download files, send text
   messages, files and voice messages, archive a conversation. Message types the view cannot show (location, contact cards)
   appear as a placeholder naming the type; stickers show as images. Formatting is shown: HTML from Beeper is sanitized to a small

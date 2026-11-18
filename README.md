@@ -54,8 +54,19 @@ networks Beeper bridges end up in one place.
 - **Sending.** A message is handed to Beeper and shown at once with a clock; the view then asks
   the Beeper Server for the confirmed message (after 0.5, 1, 2, 4 and 8 seconds) and shows a check
   mark. A message not confirmed by then appears with the next sync.
+- **Files and voice messages.** Files are attached with the paper clip, dropped onto the
+  conversation or pasted into the input; they are listed above the input and go out one message
+  each, the text as caption of the first. With an empty input the send button becomes a microphone:
+  a voice message is recorded in the browser (Opus in WebM or Ogg, AAC in Safari; up to 15
+  minutes) and sent as a voice note. Files pass through to the Beeper Server
+  (`POST /v1/assets/upload`) and are never stored on the site; the size limit is the site's
+  `max_file_size` (25 MB by default). Like text, only from the browser session of the chat window.
+- **Read receipts.** Outgoing messages show one check (sent), two checks (delivered) or two blue
+  checks (read), as far as the network reports it (`sendStatus.deliveredToUsers`, `seen`), and a
+  warning sign if the send failed. They are updated with every sync for the last two days and,
+  after a send, a few more times while the conversation is open.
 - **Chat view.** Read the history, play voice notes, view images and download files, send text
-  messages, archive a conversation. Message types the view cannot show (location, contact cards)
+  messages, files and voice messages, archive a conversation. Message types the view cannot show (location, contact cards)
   appear as a placeholder naming the type; stickers show as images. Formatting is shown: HTML from Beeper is sanitized to a small
   allowlist (paragraphs, bold, italic, lists, quotes, code, http/https/mailto links), plain text
   gets WhatsApp markup (`*bold*`, `_italic_`, `~strike~`, `` `code` ``, ```` ```mono``` ````), links

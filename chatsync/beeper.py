@@ -50,8 +50,22 @@ class BeeperClient:
 		return self._page(f"/v1/chats/{quote(chat_id, safe='')}/messages", params, direction)
 
 	def send_text(self, chat_id: str, text: str) -> dict:
+		return self.send(chat_id, text=text)
+
+	def send(self, chat_id: str, text: str | None = None, attachment: dict | None = None) -> dict:
+		"""`attachment` is {"uploadID": ..., optional "type" ("voice-note", ...), "duration", ...}."""
+		payload = {key: value for key, value in (("text", text), ("attachment", attachment)) if value}
 		path = f"/v1/chats/{quote(chat_id, safe='')}/messages"
-		return self._request("POST", path, json={"text": text}).json()
+		return self._request("POST", path, json=payload).json()
+
+	def upload(self, data: bytes, file_name: str, mime_type: str | None = None) -> dict:
+		"""Hands a file to the Beeper Server for a following `send`; returns its uploadID."""
+		form = {"fileName": file_name, **({"mimeType": mime_type} if mime_type else {})}
+		files = {"file": (file_name, data, mime_type or DEFAULT_CONTENT_TYPE)}
+		result = self._request("POST", "/v1/assets/upload", data=form, files=files).json()
+		if result.get("error") or not result.get("uploadID"):
+			raise BeeperError(422, str(result.get("error") or "upload without uploadID"))
+		return result
 
 	def archive(self, chat_id: str, archived: bool = True) -> None:
 		self._request("POST", f"/v1/chats/{quote(chat_id, safe='')}/archive", json={"archived": archived})

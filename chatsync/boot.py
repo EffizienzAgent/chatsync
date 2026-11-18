@@ -8,3 +8,10 @@ def extend_bootinfo(bootinfo) -> None:
 		frappe.db.exists("Chat Account", {"user": frappe.session.user, "enabled": 1})
 	)
 	bootinfo.chatsync_group_party_type = group_party_type()
+	bootinfo.chatsync_upload_max_bytes = upload_max_bytes()
+
+
+def upload_max_bytes() -> int:
+	from chatsync.api import upload_limit
+
+	return upload_limit()

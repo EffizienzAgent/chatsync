@@ -65,7 +65,7 @@ networks Beeper bridges end up in one place.
   everything else (SVG included) is offered as a download. Files over 50 MB are not
   streamed ("open it in Beeper"); seeking in audio and video is passed on to the Beeper Server.
 - **Voice notes.** Streamed from the Beeper Server on demand and never stored. Transcription on
-  demand through Mistral.
+  demand through Mistral or any OpenAI-compatible service, including a self-hosted Whisper server.
 - **Archiving.** Optionally save a conversation as a PDF to
   [docarchive](https://github.com/EffizienzAgent/docarchive). A group is filed under its first party.
 
@@ -192,8 +192,12 @@ What gets imported:
   chat from a contact are possible only in a browser session, for the chat's owner. Requests that carry an
   `Authorization` header (API keys, OAuth), and requests without the session's CSRF token, are
   refused, and there is no background or MCP path for them. Starting a chat sends no message.
-- Transcription sends the audio to Mistral (*Chat Sync Settings* → provider, API key and model).
-  Leave the key empty to switch it off.
+- Transcription sends the audio to the chosen service (*Chat Sync Settings* → provider). **Mistral:** API key
+  and model; leave the key empty to switch it off. **OpenAI-compatible:** any service with
+  `POST {base}/audio/transcriptions`, e.g. a self-hosted Whisper server
+  ([speaches](https://github.com/speaches-ai/speaches), whisper.cpp server, LocalAI) so voice notes never leave your
+  own network, or a hosted API (OpenAI, Groq). Base URL (e.g. `http://whisper:8000/v1`), optional key, model
+  (default `whisper-1`) and optional language (e.g. `de`).
 - Archiving needs a docarchive role; the PDF contains the messages of the chosen period, with
   images and files listed by name, not embedded. Archived
   PDFs follow docarchive's access rules, not the owner-only rule above.

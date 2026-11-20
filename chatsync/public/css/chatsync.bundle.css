@@ -89,6 +89,26 @@
 .chatsync-ui .chat-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .chatsync-ui .chat-state { display: inline-flex; }
 .chatsync-ui .chat-state .icon { width: 12px; height: 12px; stroke: currentColor; }
+.chatsync-ui .chat-state[data-receipt="Read"] { color: #1d64d8; }
+.chatsync-ui .chat-state[data-receipt] .icon { stroke-width: 2px; }
+.chatsync-ui .chat-state[data-receipt="Failed"] { color: var(--red-500, #ef4444); }
+[data-theme="dark"] .chatsync-ui .chat-state[data-receipt="Read"] { color: #7dd3fc; }
+.chatsync-ui .chat-tool { flex: none; width: 36px; height: 36px; padding: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.chatsync-ui .chat-tool .icon { stroke: currentColor; }
+.chatsync-ui .chat-tray { display: flex; flex-wrap: wrap; gap: 6px; padding: var(--padding-sm) var(--padding-md) 0; border-top: 1px solid var(--border-color); background: var(--card-bg); }
+.chatsync-ui .chat-tray + .chat-composer { border-top: 0; }
+.chatsync-ui .chat-staged { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 4px 4px 10px; border-radius: 999px; background: var(--control-bg); font-size: var(--text-sm); }
+.chatsync-ui .chat-staged .chat-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.chatsync-ui .chat-staged .chat-file-size { color: var(--text-muted); flex: none; }
+.chatsync-ui .chat-unstage { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-muted); }
+.chatsync-ui .chat-unstage:hover { background: var(--fg-hover-color, rgba(0, 0, 0, .06)); color: var(--text-color); }
+.chatsync-ui .chat-unstage .icon { stroke: currentColor; }
+.chatsync-ui .chat-recording { flex: 1; display: flex; align-items: center; gap: var(--margin-sm); min-height: 36px; padding: 0 8px; border-radius: 18px; background: var(--control-bg); font-variant-numeric: tabular-nums; }
+.chatsync-ui .chat-recording-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red-500, #ef4444); animation: chat-recording-pulse 1.2s ease-in-out infinite; }
+@keyframes chat-recording-pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .chatsync-ui .chat-recording-dot { animation: none; } }
+.chatsync-ui .chat-dropping { position: relative; }
+.chatsync-ui .chat-dropping::after { content: ""; position: absolute; inset: 6px; border: 2px dashed var(--primary, #2563eb); border-radius: var(--border-radius-lg); background: rgba(37, 99, 235, .06); pointer-events: none; z-index: 5; }
 
 .chatsync-quick-dialog .modal-body { padding: 0; }
 .chatsync-quick { display: flex; flex-direction: column; background: var(--chat-canvas); }

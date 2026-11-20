@@ -1,4 +1,5 @@
 import json
+import os
 from contextlib import contextmanager
 from datetime import timedelta
 from urllib.parse import urlencode
@@ -542,6 +543,7 @@ def reassign_chat(chat: str, contact: str) -> str:
 
 
 SEND_COMMAND = "chatsync.api.send_message"
+SEND_FILE_COMMAND = "chatsync.api.send_file"
 START_COMMAND = "chatsync.api.start_chat"
 MESSAGE_FIELDS = [
 	"name",
@@ -556,6 +558,7 @@ MESSAGE_FIELDS = [
 	"media_url",
 	"attachments",
 	"reactions",
+	"receipt",
 ]
 
 
@@ -760,6 +763,43 @@ def send_message(chat: str, text: str) -> dict:
 	return {"pending_message_id": (sent or {}).get("pendingMessageID")}
 
 
+@frappe.whitelist(methods=["POST"])
+def send_file(chat: str, text: str | None = None, voice_note: int = 0, duration: float | None = None) -> dict:
+	"""A file (or a voice note recorded in the browser) with an optional caption, browser session only.
+
+	The file comes as multipart field `file` and is passed through to the Beeper Server without being
+	stored on the site. Like send_message, it returns once Beeper accepted the message; the client
+	polls refresh_messages for the confirmed one.
+	"""
+	check_browser_session(SEND_FILE_COMMAND)
+	check_chat(chat, write=True)
+	upload = (frappe.request.files or {}).get("file")
+	if not upload:
+		frappe.throw(frappe._("No file was sent."))
+	data = upload.read(upload_limit() + 1)
+	if not data:
+		frappe.throw(frappe._("The file is empty."))
+	if len(data) > upload_limit():
+		frappe.throw(frappe._("The file is too large to send from here."))
+	file_name = os.path.basename(upload.filename or "") or ("voice.ogg" if cint(voice_note) else "file")
+	client, beeper_chat_id = chat_client(chat)
+	uploaded = beeper_call(client.upload, data, file_name, upload.mimetype or None)
+	attachment = {"uploadID": uploaded["uploadID"]}
+	if cint(voice_note):
+		attachment["type"] = "voice-note"
+		if duration and float(duration) > 0:
+			attachment["duration"] = round(float(duration), 1)
+	sent = beeper_call(client.send, beeper_chat_id, (text or "").strip() or None, attachment)
+	return {"pending_message_id": (sent or {}).get("pendingMessageID")}
+
+
+def upload_limit() -> int:
+	"""The request size Frappe accepts for uploads (site config `max_file_size`, else 25 MB)."""
+	from frappe.core.api.file import get_max_file_size
+
+	return get_max_file_size()
+
+
 def chat_client(chat: str):
 	beeper_chat_id, account = frappe.db.get_value("Chat", chat, ["beeper_chat_id", "account"])
 	return sync.client_for(frappe.get_doc("Chat Account", account)), beeper_chat_id
@@ -782,10 +822,17 @@ def pull_latest(chat: str, client, beeper_chat_id: str) -> list[dict]:
 
 @frappe.whitelist(methods=["POST"])
 def refresh_messages(chat: str) -> dict:
-	"""Fetches the newest page from Beeper and stores it; the client polls it after a send."""
+	"""Fetches the newest page from Beeper and stores it; the client polls it after a send and while the
+	conversation is open. If the sync job writes the same rows at that moment, this poll gives way quietly
+	(the next poll or sync stores the messages) instead of showing a deadlock to the user."""
 	check_chat(chat, write=True)
 	client, beeper_chat_id = chat_client(chat)
-	return {"messages": pull_latest(chat, client, beeper_chat_id)}
+	try:
+		return {"messages": pull_latest(chat, client, beeper_chat_id)}
+	except frappe.QueryDeadlockError:
+		frappe.db.rollback()
+		frappe.local.message_log = []
+		return {"messages": []}
 
 
 def contact_phones(contact: str) -> list[str]:

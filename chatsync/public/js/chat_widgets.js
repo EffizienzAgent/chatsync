@@ -7,6 +7,16 @@ const MAX_INPUT_LINES = 6;
 const POLL_DELAYS = [500, 1000, 2000, 4000, 8000];
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 const RECONCILE_DELAY = 2000;
+const RECEIPT_DELAYS = [15000, 60000, 180000];
+const LIVE_INTERVAL = 15000;
+const VOICE_TYPES = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/mp4"];
+const VOICE_MAX_SECONDS = 15 * 60;
+const RECEIPTS = {
+	Sent: { icon: "check", label: "Sent" },
+	Delivered: { icon: "check-check", label: "Delivered" },
+	Read: { icon: "check-check", label: "Read" },
+	Failed: { icon: "circle-alert", label: "Not sent" },
+};
 
 function avatar(title, url) {
 	const [bg, fg] = frappe.get_palette(title || "?");
@@ -201,6 +211,37 @@ class ChatPane {
 		this.pending = [];
 		this.timers = new Set();
 		this.confirmed = new Set();
+		this.staged = [];
+		this.start_live();
+	}
+
+	/** While the pane is visible, its chats are refreshed from Beeper every 15 seconds: new messages and
+	receipts show up without waiting for the sync. Stops by itself once the pane leaves the page. */
+	start_live() {
+		clearInterval(this.live_timer);
+		this.live_timer = setInterval(() => {
+			const scroll = this.$scroll?.[0];
+			if (scroll && !scroll.isConnected) return clearInterval(this.live_timer);
+			if (!scroll || document.hidden || !scroll.offsetParent || this.sending || this.mode === "preview") return;
+			const ticket = this.ticket;
+			(this.chats || []).slice(0, 3).forEach(({ name }) =>
+				frappe
+					.call({ method: "chatsync.api.refresh_messages", type: "POST", silent: true, args: { chat: name } })
+					.then((r) => ticket === this.ticket && this.has_news(r.message.messages) && this.merge(r.message.messages, name))
+					.catch(() => {})
+			);
+		}, LIVE_INTERVAL);
+	}
+
+	/** Re-rendering replaces the list (and stops a playing voice note), so only when something changed. */
+	has_news(incoming) {
+		const by_name = new Map(this.messages.map((m) => [m.name, m]));
+		const oldest = this.has_more ? this.messages[0] : null;
+		return incoming.some((m) => {
+			const current = by_name.get(m.name);
+			if (!current && oldest && compare(m, oldest) < 0) return false;
+			return !current || (m.receipt && m.receipt !== current.receipt) || !same_reactions(current.reactions, m.reactions);
+		});
 	}
 
 	make_composer($parent, $network_parent) {
@@ -209,12 +250,31 @@ class ChatPane {
 			.attr({ "aria-label": __("Send via", null, CONTEXT), title: __("Send via", null, CONTEXT) })
 			.on("change", () => this.select_chat(this.$network.val()))
 			.appendTo($network_parent || $composer);
+		this.$tray = $(`<div class="chat-tray"></div>`).insertBefore($composer).hide();
+		this.$file = $(`<input type="file" multiple hidden>`)
+			.on("change", () => {
+				this.stage([...this.$file[0].files]);
+				this.$file.val("");
+			})
+			.appendTo($composer);
+		this.$attach = $(`<button type="button" class="btn btn-default chat-tool"></button>`)
+			.attr({ title: __("Attach files", null, CONTEXT), "aria-label": __("Attach files", null, CONTEXT) })
+			.append(frappe.utils.icon("paperclip", "sm"))
+			.on("click", () => this.$file.trigger("click"))
+			.appendTo($composer);
 		this.$input = $(`<textarea class="form-control chat-input" rows="1"></textarea>`).appendTo($composer);
+		this.$recording = $(`<div class="chat-recording" role="status"></div>`).appendTo($composer).hide();
 		this.$send = $(`<button type="button" class="btn btn-primary chat-send" disabled></button>`)
 			.attr({ title: __("Send", null, CONTEXT), "aria-label": __("Send", null, CONTEXT) })
 			.append(frappe.utils.icon("send-horizontal", "sm"))
-			.on("click", () => this.send())
+			.on("click", () => (this.recorder ? this.stop_recording(true) : this.send()))
 			.appendTo($composer);
+		this.$mic = $(`<button type="button" class="btn btn-primary chat-send chat-mic"></button>`)
+			.attr({ title: __("Record a voice message", null, CONTEXT), "aria-label": __("Record a voice message", null, CONTEXT) })
+			.append(frappe.utils.icon("mic", "sm"))
+			.on("click", () => this.start_recording())
+			.appendTo($composer)
+			.hide();
 		this.$input.on("input", () => this.update_composer());
 		this.$input.on("keydown", (e) => {
 			if (e.key === "Enter" && !e.shiftKey && !e.originalEvent.isComposing) {
@@ -222,7 +282,140 @@ class ChatPane {
 				this.send();
 			}
 		});
+		this.$input.on("paste", (e) => {
+			const files = [...(e.originalEvent.clipboardData?.files || [])];
+			if (!files.length) return;
+			e.preventDefault();
+			this.stage(files);
+		});
+		this.make_drop_zone($parent);
 		return $composer;
+	}
+
+	/** Files dropped anywhere on the conversation are staged like picked ones. */
+	make_drop_zone($zone) {
+		let depth = 0;
+		const has_files = (e) => [...(e.originalEvent.dataTransfer?.types || [])].includes("Files");
+		$zone.on("dragenter", (e) => {
+			if (!has_files(e) || !this.can_send()) return;
+			e.preventDefault();
+			depth++;
+			$zone.addClass("chat-dropping");
+		});
+		$zone.on("dragover", (e) => {
+			if (!has_files(e) || !this.can_send()) return;
+			e.preventDefault();
+			e.originalEvent.dataTransfer.dropEffect = "copy";
+		});
+		$zone.on("dragleave", () => {
+			depth = Math.max(0, depth - 1);
+			if (!depth) $zone.removeClass("chat-dropping");
+		});
+		$zone.on("drop", (e) => {
+			depth = 0;
+			$zone.removeClass("chat-dropping");
+			if (!has_files(e)) return;
+			e.preventDefault();
+			if (this.can_send()) this.stage([...e.originalEvent.dataTransfer.files]);
+		});
+	}
+
+	can_send() {
+		return Boolean(this.chat) && !this.$input.prop("disabled");
+	}
+
+	stage(files) {
+		if (!this.can_send()) return;
+		const limit = frappe.boot.chatsync_upload_max_bytes || 25 * 1024 * 1024;
+		const too_big = files.filter((f) => f.size > limit);
+		if (too_big.length)
+			frappe.show_alert({
+				message: __("Too large to send from here (max. {0}): {1}", [this.file_size(limit), too_big.map((f) => f.name).join(", ")], CONTEXT),
+				indicator: "orange",
+			});
+		this.staged = this.staged.concat(files.filter((f) => f.size && f.size <= limit));
+		this.render_tray();
+		this.update_composer();
+		this.$input.focus();
+	}
+
+	render_tray() {
+		this.$tray.empty().toggle(this.staged.length > 0);
+		this.staged.forEach((file, index) => {
+			const $chip = $(`<span class="chat-staged"></span>`).appendTo(this.$tray);
+			$chip.append(frappe.utils.icon(file.type.startsWith("image/") ? "image" : "paperclip", "xs"));
+			$(`<span class="chat-file-name"></span>`).text(file.name).appendTo($chip);
+			$(`<span class="chat-file-size"></span>`).text(this.file_size(file.size)).appendTo($chip);
+			$(`<button type="button" class="chat-unstage"></button>`)
+				.attr({ title: __("Remove", null, CONTEXT), "aria-label": __("Remove", null, CONTEXT) })
+				.append(frappe.utils.icon("x", "xs"))
+				.on("click", () => {
+					this.staged.splice(index, 1);
+					this.render_tray();
+					this.update_composer();
+				})
+				.appendTo($chip);
+		});
+	}
+
+	voice_type() {
+		if (!window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) return null;
+		return VOICE_TYPES.find((type) => MediaRecorder.isTypeSupported(type)) || null;
+	}
+
+	async start_recording() {
+		const type = this.voice_type();
+		if (!type || this.recorder || !this.can_send()) return;
+		let stream;
+		try {
+			stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		} catch (e) {
+			frappe.show_alert({ message: __("No access to the microphone", null, CONTEXT), indicator: "red" });
+			return;
+		}
+		const recorder = new MediaRecorder(stream, { mimeType: type });
+		const chunks = [];
+		const started = Date.now();
+		const chat = this.chat;
+		recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+		recorder.onstop = () => {
+			stream.getTracks().forEach((track) => track.stop());
+			if (!recorder.send || !chunks.length) return;
+			const mime = type.split(";")[0];
+			const ext = { "audio/ogg": "ogg", "audio/webm": "webm", "audio/mp4": "m4a" }[mime];
+			const file = new File(chunks, `voice.${ext}`, { type: mime });
+			this.send_files([file], "", chat, { voice: true, duration: (Date.now() - started) / 1000 });
+		};
+		this.recorder = recorder;
+		recorder.start(1000);
+		const $cancel = $(`<button type="button" class="chat-unstage"></button>`)
+			.attr({ title: __("Discard", null, CONTEXT), "aria-label": __("Discard", null, CONTEXT) })
+			.append(frappe.utils.icon("x", "sm"))
+			.on("click", () => this.stop_recording(false));
+		const $time = $(`<span class="chat-recording-time">0:00</span>`);
+		this.$recording.empty().append($cancel, $(`<span class="chat-recording-dot"></span>`), $time).show();
+		this.$input.hide();
+		this.$attach.prop("disabled", true);
+		this.recording_timer = setInterval(() => {
+			const seconds = Math.floor((Date.now() - started) / 1000);
+			$time.text(`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`);
+			if (seconds >= VOICE_MAX_SECONDS) this.stop_recording(true);
+		}, 250);
+		this.update_composer();
+	}
+
+	stop_recording(send) {
+		const recorder = this.recorder;
+		if (!recorder) return;
+		this.recorder = null;
+		clearInterval(this.recording_timer);
+		recorder.send = send;
+		if (recorder.state !== "inactive") recorder.stop();
+		this.$recording.hide().empty();
+		this.$input.show();
+		this.$attach.prop("disabled", false);
+		this.update_composer();
+		this.$input.focus();
 	}
 
 	update_composer() {
@@ -236,7 +429,11 @@ class ChatPane {
 		input.style.height = "auto";
 		const borders = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
 		input.style.height = `${Math.min(input.scrollHeight + borders, line * MAX_INPUT_LINES + box)}px`;
-		this.$send.prop("disabled", this.sending || !this.$input.val().trim());
+		const empty = !this.$input.val().trim() && !this.staged.length;
+		const mic = empty && !this.recorder && Boolean(this.voice_type()) && this.can_send();
+		this.$mic?.toggle(mic);
+		this.$send.toggle(!mic);
+		this.$send.prop("disabled", !this.recorder && (this.sending || empty));
 	}
 
 	chat_label(chat) {
@@ -255,6 +452,8 @@ class ChatPane {
 			"placeholder",
 			enabled ? __("Message via {0}", [this.selected().network_label], CONTEXT) : __("No chat to reply to", null, CONTEXT)
 		);
+		this.$attach?.prop("disabled", !enabled);
+		this.update_composer?.();
 	}
 
 	selected() {
@@ -283,10 +482,11 @@ class ChatPane {
 		if (message.direction !== "Out" && !this.is_group && this.mode === "contact" && message.sender_name && message.sender_name !== this.title)
 			$(`<span class="chat-sender"></span>`).text(message.sender_name).appendTo($meta);
 		$(`<span class="chat-time"></span>`).text(message.sent_at.slice(11, 16)).appendTo($meta);
-		if (this.confirmed.has(message.name))
+		const receipt = RECEIPTS[message.receipt || (this.confirmed.has(message.name) ? "Sent" : "")];
+		if (message.direction === "Out" && receipt)
 			$(`<span class="chat-state"></span>`)
-				.attr("title", __("Sent", null, CONTEXT))
-				.append(frappe.utils.icon("check", "xs"))
+				.attr({ title: __(receipt.label, null, CONTEXT), "data-receipt": message.receipt || "Sent" })
+				.append(frappe.utils.icon(receipt.icon, "xs"))
 				.appendTo($meta);
 	}
 
@@ -544,6 +744,7 @@ class ChatPane {
 		incoming.forEach((m) => {
 			const current = by_name.get(m.name);
 			if (current && !same_reactions(current.reactions, m.reactions)) current.reactions = m.reactions;
+			if (current && m.receipt) current.receipt = m.receipt;
 		});
 		const oldest = this.has_more ? this.messages[0] : null;
 		const added = incoming
@@ -564,13 +765,33 @@ class ChatPane {
 		const candidates = added.filter((m) => m.direction === "Out").sort(compare).reverse();
 		for (const entry of [...this.pending]) {
 			const message = candidates.find(
-				(m) => m.chat === entry.chat && m.text === entry.text && (!entry.after || compare(m, entry.after) > 0)
+				(m) => m.chat === entry.chat && this.is_entry(m, entry) && (!entry.after || compare(m, entry.after) > 0)
 			);
 			if (!message) continue;
 			candidates.splice(candidates.indexOf(message), 1);
 			this.pending = this.pending.filter((p) => p !== entry);
 			this.confirmed.add(message.name);
 		}
+	}
+
+	is_entry(message, entry) {
+		if (!entry.file) return message.text === entry.text;
+		return message.has_media && (!entry.text || message.text === entry.text);
+	}
+
+	/** Asks Beeper again a few times after a send, so delivered and read show up while the chat is open. */
+	watch_receipts(chat) {
+		const ticket = this.ticket;
+		(this.receipt_timers || []).forEach((timer) => clearTimeout(timer));
+		this.receipt_timers = RECEIPT_DELAYS.map((delay) =>
+			setTimeout(() => {
+				if (ticket !== this.ticket || document.hidden) return;
+				frappe
+					.call({ method: "chatsync.api.refresh_messages", type: "POST", silent: true, args: { chat } })
+					.then((r) => ticket === this.ticket && this.merge(r.message.messages, chat))
+					.catch(() => {});
+			}, delay)
+		);
 	}
 
 	pending_bubble(entry) {
@@ -582,13 +803,19 @@ class ChatPane {
 			.attr("title", __("Sending...", null, CONTEXT))
 			.append(frappe.utils.icon("clock", "xs"))
 			.appendTo($meta);
-		return $(`<div class="chat-row out chat-pending"></div>`).append(
-			$(`<div class="chat-bubble"></div>`).append($(`<div class="chat-text"></div>`).text(entry.text)).append($meta)
-		);
+		const $bubble = $(`<div class="chat-bubble"></div>`);
+		if (entry.voice) $(`<div class="chat-kind"></div>`).text(`🎤 ${__("Voice message", null, CONTEXT)}`).appendTo($bubble);
+		else if (entry.file) this.attachment_name({ file_name: entry.file, file_size: entry.size }).appendTo($bubble);
+		if (entry.text) $(`<div class="chat-text"></div>`).text(entry.text).appendTo($bubble);
+		return $(`<div class="chat-row out chat-pending"></div>`).append($bubble.append($meta));
 	}
 
 	clear_pending() {
 		clearTimeout(this.reconcile_timer);
+		(this.receipt_timers || []).forEach((timer) => clearTimeout(timer));
+		this.stop_recording(false);
+		this.staged = [];
+		if (this.$tray) this.render_tray();
 		this.pending = [];
 		this.timers.forEach((timer) => clearTimeout(timer));
 		this.timers.clear();
@@ -614,6 +841,7 @@ class ChatPane {
 			this.merge(r.message.messages, entry.chat);
 			if (!this.pending.includes(entry)) {
 				if (this.at_bottom) this.scroll_to_bottom();
+				this.watch_receipts(entry.chat);
 			} else if (attempt + 1 < POLL_DELAYS.length) {
 				this.poll_sent(entry, attempt + 1);
 			} else {
@@ -636,6 +864,13 @@ class ChatPane {
 	send() {
 		const text = this.$input.val().trim();
 		const chat = this.chat;
+		if (this.staged.length && !this.sending && chat) {
+			const files = this.staged;
+			this.staged = [];
+			this.render_tray();
+			this.$input.val("");
+			return this.send_files(files, text, chat);
+		}
 		if (!text || this.sending || !chat) return;
 		const ticket = this.ticket;
 		const entry = { chat, text, time: now_time(), after: this.newest_known(chat) };
@@ -663,6 +898,60 @@ class ChatPane {
 				if (ticket === this.ticket) this.$input.focus();
 				this.update_composer();
 			});
+	}
+
+	/** One message per file; the caption goes with the first. Uploads run one after the other. */
+	async send_files(files, text, chat, { voice = false, duration = null } = {}) {
+		const ticket = this.ticket;
+		const entries = files.map((file, index) => ({
+			chat,
+			file: file.name,
+			size: file.size,
+			voice,
+			text: index === 0 ? text : "",
+			time: now_time(),
+			after: this.newest_known(chat),
+		}));
+		this.sending = true;
+		this.pending.push(...entries);
+		this.render();
+		this.scroll_to_bottom();
+		this.update_composer();
+		for (const [index, file] of files.entries()) {
+			const entry = entries[index];
+			const form = new FormData();
+			form.append("chat", chat);
+			form.append("file", file, file.name);
+			if (entry.text) form.append("text", entry.text);
+			if (voice) {
+				form.append("voice_note", "1");
+				if (duration) form.append("duration", String(duration));
+			}
+			try {
+				const response = await fetch("/api/method/chatsync.api.send_file", {
+					method: "POST",
+					body: form,
+					headers: { "X-Frappe-CSRF-Token": frappe.csrf_token, Accept: "application/json" },
+				});
+				if (!response.ok) throw await response.json().catch(() => ({}));
+				if (ticket !== this.ticket) return;
+				this.poll_sent(entry);
+			} catch (r) {
+				if (ticket !== this.ticket) return;
+				this.pending = this.pending.filter((p) => p !== entry);
+				this.render();
+				frappe.show_alert({
+					message: server_message(r) || __("{0} could not be sent", [file.name], CONTEXT),
+					indicator: "red",
+				});
+			}
+		}
+		this.sending = false;
+		if (ticket === this.ticket) {
+			this.after_send();
+			this.update_composer();
+			this.$input.focus();
+		}
 	}
 
 	after_send() {}

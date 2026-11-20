@@ -90,6 +90,25 @@ class TestBeeperClient(IntegrationTestCase):
 		self.assertEqual(kw["json"], {"text": "Hallo"})
 		self.assertEqual(result["pendingMessageID"], "7")
 
+	def test_send_with_attachment(self):
+		with self.serve(FakeResponse({"chatID": CHAT_ID, "pendingMessageID": "8"})):
+			self.client.send(CHAT_ID, attachment={"uploadID": "u1", "type": "voice-note", "duration": 3.2})
+		self.assertEqual(self.calls[0][2]["json"], {"attachment": {"uploadID": "u1", "type": "voice-note", "duration": 3.2}})
+
+	def test_upload_is_multipart(self):
+		with self.serve(FakeResponse({"uploadID": "u1", "mimeType": "image/png"})):
+			result = self.client.upload(b"png", "a.png", "image/png")
+		method, url, kw = self.calls[0]
+		self.assertEqual((method, url), ("POST", f"{BASE}/v1/assets/upload"))
+		self.assertEqual(kw["files"], {"file": ("a.png", b"png", "image/png")})
+		self.assertEqual(kw["data"], {"fileName": "a.png", "mimeType": "image/png"})
+		self.assertEqual(result["uploadID"], "u1")
+
+	def test_upload_error_raises(self):
+		with self.serve(FakeResponse({"error": "unsupported"})):
+			with self.assertRaises(BeeperError):
+				self.client.upload(b"x", "a.bin")
+
 	def test_archive_and_unarchive(self):
 		with self.serve(FakeResponse(status_code=204), FakeResponse(status_code=204)):
 			self.assertIsNone(self.client.archive(CHAT_ID))

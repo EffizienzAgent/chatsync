@@ -173,3 +173,18 @@ Group assigned,Gruppe zugeordnet,Chat View
 Remove group,Gruppe entfernen,Chat View
 Remove the group from the CRM? Its messages will be deleted and it is not suggested again.,Gruppe aus dem CRM entfernen? Ihre Nachrichten werden gelöscht und sie wird nicht mehr vorgeschlagen.,Chat View
 by name,nach Name,Chat View
+Attach files,Dateien anhängen,Chat View
+Record a voice message,Sprachnachricht aufnehmen,Chat View
+Discard,Verwerfen,Chat View
+Remove,Entfernen,Chat View
+No access to the microphone,Kein Zugriff auf das Mikrofon,Chat View
+Too large to send from here (max. {0}): {1},Zu groß zum Senden von hier (max. {0}): {1},Chat View
+{0} could not be sent,{0} konnte nicht gesendet werden,Chat View
+Delivered,Zugestellt,Chat View
+Read,Gelesen,Chat View
+Not sent,Nicht gesendet,Chat View
+Voice message,Sprachnachricht,Chat View
+No file was sent.,Es wurde keine Datei gesendet.
+The file is empty.,Die Datei ist leer.
+The file is too large to send from here.,"Die Datei ist zu groß, um sie von hier zu senden."
+Receipt,Lesestatus

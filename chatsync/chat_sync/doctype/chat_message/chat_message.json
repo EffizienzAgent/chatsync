@@ -20,6 +20,7 @@
   "media_url",
   "attachments",
   "reactions",
+  "receipt",
   "transcript",
   "transcript_provider"
  ],
@@ -97,6 +98,14 @@
    "fieldname": "reactions",
    "fieldtype": "JSON",
    "label": "Reactions"
+  },
+  {
+   "description": "Outgoing messages: Sent, Delivered or Read as reported by the network, Failed if the send failed.",
+   "fieldname": "receipt",
+   "fieldtype": "Select",
+   "label": "Receipt",
+   "options": "\nSent\nDelivered\nRead\nFailed",
+   "read_only": 1
   },
   {
    "fieldname": "transcript",

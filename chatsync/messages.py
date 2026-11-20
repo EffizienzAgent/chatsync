@@ -87,6 +87,27 @@ def grouped_reactions(value: str | None) -> list[dict]:
 	return list(groups.values())
 
 
+def was_seen(seen) -> bool:
+	"""Beeper's `seen` is a bool, a timestamp string or a map of participant IDs to either."""
+	if isinstance(seen, dict):
+		return any(was_seen(value) for value in seen.values())
+	return bool(seen)
+
+
+def receipt_of(raw: dict) -> str | None:
+	"""Sent, Delivered, Read or Failed for outgoing messages, as far as the network reports it."""
+	if not raw.get("isSender"):
+		return None
+	status = raw.get("sendStatus") or {}
+	if str(status.get("status") or "").startswith("FAIL"):
+		return "Failed"
+	if was_seen(raw.get("seen")):
+		return "Read"
+	if status.get("deliveredToUsers"):
+		return "Delivered"
+	return "Sent"
+
+
 def values_from(raw: dict, counterpart_id: str | None = None, self_id: str | None = None) -> dict:
 	attachments = raw.get("attachments") or []
 	reactions = reactions_from(raw, counterpart_id, self_id)
@@ -103,6 +124,7 @@ def values_from(raw: dict, counterpart_id: str | None = None, self_id: str | Non
 		"media_url": attachments[0].get("srcURL") if attachments else None,
 		"attachments": json.dumps([from_beeper(a) for a in attachments]) if attachments else None,
 		"reactions": json.dumps(reactions, ensure_ascii=False) if reactions else None,
+		"receipt": receipt_of(raw),
 	}
 
 
@@ -124,6 +146,7 @@ def preview(raw: dict) -> dict:
 		"has_media": bool(attachments),
 		"attachments": public(attachments),
 		"reactions": grouped_reactions(values["reactions"]),
+		"receipt": values["receipt"],
 	}
 
 

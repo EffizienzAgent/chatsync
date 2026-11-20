@@ -1,3 +1,4 @@
+import io
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
@@ -24,6 +25,14 @@ class SendingBeeper(AssignmentBeeper):
 		self.sent.append((chat_id, text))
 		return {"chatID": chat_id, "pendingMessageID": "pending-1"}
 
+	def upload(self, data, file_name, mime_type=None):
+		self.uploads = [*getattr(self, "uploads", []), (data, file_name, mime_type)]
+		return {"uploadID": "upload-1"}
+
+	def send(self, chat_id, text=None, attachment=None):
+		self.sent.append((chat_id, text, attachment))
+		return {"chatID": chat_id, "pendingMessageID": "pending-2"}
+
 	def messages(self, chat_id, cursor=None, direction="before"):
 		if self.sent or self.latest:
 			return self.latest, None
@@ -33,11 +42,14 @@ class SendingBeeper(AssignmentBeeper):
 CSRF = "csrf-token-1"
 
 
-def fake_request(method="POST", authorization=None, csrf=CSRF):
+def fake_request(method="POST", authorization=None, csrf=CSRF, files=None):
 	headers = {"Authorization": authorization} if authorization else {}
 	if csrf:
 		headers["X-Frappe-CSRF-Token"] = csrf
-	environ = EnvironBuilder(method=method, path="/api/method/chatsync.api.send_message", headers=headers)
+	data = {name: (io.BytesIO(content), file_name) for name, (content, file_name) in (files or {}).items()}
+	environ = EnvironBuilder(
+		method=method, path="/api/method/chatsync.api.send_message", headers=headers, data=data or None
+	)
 	return Request(environ.get_environ())
 
 
@@ -182,6 +194,68 @@ class TestChatView(ChatsyncTestCase):
 		self.assertEqual(frappe.get_all("Chat Message", filters={"chat": self.chat}, pluck="text"), ["hello"])
 		api.refresh_messages(self.chat)
 		self.assertEqual(frappe.db.count("Chat Message", {"chat": self.chat}), 1)
+
+	def test_send_file_passes_file_through(self):
+		self.request(cmd=api.SEND_FILE_COMMAND, files={"file": (b"PNGDATA", "../bild.png")})
+		before = frappe.db.count("File")
+		result = api.send_file(self.chat, text=" Schau ")
+		self.assertEqual(self.fake.uploads, [(b"PNGDATA", "bild.png", "image/png")])
+		self.assertEqual(self.fake.sent, [(self.raw["id"], "Schau", {"uploadID": "upload-1"})])
+		self.assertEqual(result, {"pending_message_id": "pending-2"})
+		self.assertEqual(frappe.db.count("File"), before)
+
+	def test_send_file_voice_note(self):
+		self.request(cmd=api.SEND_FILE_COMMAND, files={"file": (b"OggS", "voice.ogg")})
+		api.send_file(self.chat, voice_note=1, duration="4.26")
+		attachment = self.fake.sent[0][2]
+		self.assertEqual(attachment, {"uploadID": "upload-1", "type": "voice-note", "duration": 4.3})
+		self.assertIsNone(self.fake.sent[0][1])
+
+	def test_send_file_needs_its_own_command(self):
+		self.request(files={"file": (b"x", "a.txt")})
+		with self.assertRaises(frappe.PermissionError):
+			api.send_file(self.chat)
+		self.assertEqual(self.fake.sent, [])
+
+	def test_send_file_rejects_missing_file(self):
+		self.request(cmd=api.SEND_FILE_COMMAND)
+		with self.assertRaises(frappe.ValidationError):
+			api.send_file(self.chat)
+		self.assertEqual(self.fake.sent, [])
+
+	def test_send_file_rejects_empty_file(self):
+		self.request(cmd=api.SEND_FILE_COMMAND, files={"file": (b"", "a.txt")})
+		with self.assertRaises(frappe.ValidationError):
+			api.send_file(self.chat)
+		self.assertEqual(self.fake.sent, [])
+
+	def test_send_file_rejects_large_file(self):
+		self.request(cmd=api.SEND_FILE_COMMAND, files={"file": (b"12345", "a.txt")})
+		with patch.object(api, "upload_limit", return_value=4), self.assertRaises(frappe.ValidationError):
+			api.send_file(self.chat)
+		self.assertEqual(self.fake.sent, [])
+
+	def test_refresh_stores_receipt(self):
+		self.request()
+		read = message(self.raw["id"], 0, "gelesen", isSender=True, seen=True, sendStatus={"status": "SUCCESS"})
+		self.fake.latest = [read]
+		self.fake.sent.append("x")
+		result = api.refresh_messages(self.chat)
+		self.assertEqual(result["messages"][0]["receipt"], "Read")
+
+	def test_refresh_gives_way_on_deadlock(self):
+		self.request()
+		self.fake.latest = [message(self.raw["id"], 0, "x")]
+		self.fake.sent.append("x")
+		with patch("chatsync.messages.upsert", side_effect=frappe.QueryDeadlockError("deadlock")):
+			self.assertEqual(api.refresh_messages(self.chat), {"messages": []})
+
+	def test_activity_written_only_on_change(self):
+		upsert(self.chat, message(self.raw["id"], 0, "hallo"))
+		sync.update_activity(self.chat)
+		with patch("frappe.db.set_value") as set_value:
+			sync.update_activity(self.chat)
+		set_value.assert_not_called()
 
 	def test_send_rejects_empty_text(self):
 		self.request()

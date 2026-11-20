@@ -369,7 +369,11 @@ def update_activity(chat: str) -> None:
 	)
 	values = {"last_incoming_at": newest.get("In"), "last_outgoing_at": newest.get("Out")}
 	values["last_message_at"] = max(filter(None, values.values()), default=None)
-	frappe.db.set_value("Chat", chat, values, update_modified=False)
+	# Only write when something changed: the open conversation refreshes every few seconds while the sync
+	# job runs, and an unconditional write of the Chat row made the two deadlock.
+	current = frappe.db.get_value("Chat", chat, list(values), as_dict=True) or {}
+	if any(str(current.get(k) or "") != str(v or "") for k, v in values.items()):
+		frappe.db.set_value("Chat", chat, values, update_modified=False)
 
 
 def import_history(chat: str) -> None:

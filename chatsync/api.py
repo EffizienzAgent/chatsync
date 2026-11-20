@@ -822,10 +822,17 @@ def pull_latest(chat: str, client, beeper_chat_id: str) -> list[dict]:
 
 @frappe.whitelist(methods=["POST"])
 def refresh_messages(chat: str) -> dict:
-	"""Fetches the newest page from Beeper and stores it; the client polls it after a send."""
+	"""Fetches the newest page from Beeper and stores it; the client polls it after a send and while the
+	conversation is open. If the sync job writes the same rows at that moment, this poll gives way quietly
+	(the next poll or sync stores the messages) instead of showing a deadlock to the user."""
 	check_chat(chat, write=True)
 	client, beeper_chat_id = chat_client(chat)
-	return {"messages": pull_latest(chat, client, beeper_chat_id)}
+	try:
+		return {"messages": pull_latest(chat, client, beeper_chat_id)}
+	except frappe.QueryDeadlockError:
+		frappe.db.rollback()
+		frappe.local.message_log = []
+		return {"messages": []}
 
 
 def contact_phones(contact: str) -> list[str]:

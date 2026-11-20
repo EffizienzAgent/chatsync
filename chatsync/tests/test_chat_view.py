@@ -243,6 +243,20 @@ class TestChatView(ChatsyncTestCase):
 		result = api.refresh_messages(self.chat)
 		self.assertEqual(result["messages"][0]["receipt"], "Read")
 
+	def test_refresh_gives_way_on_deadlock(self):
+		self.request()
+		self.fake.latest = [message(self.raw["id"], 0, "x")]
+		self.fake.sent.append("x")
+		with patch("chatsync.messages.upsert", side_effect=frappe.QueryDeadlockError("deadlock")):
+			self.assertEqual(api.refresh_messages(self.chat), {"messages": []})
+
+	def test_activity_written_only_on_change(self):
+		upsert(self.chat, message(self.raw["id"], 0, "hallo"))
+		sync.update_activity(self.chat)
+		with patch("frappe.db.set_value") as set_value:
+			sync.update_activity(self.chat)
+		set_value.assert_not_called()
+
 	def test_send_rejects_empty_text(self):
 		self.request()
 		with self.assertRaises(frappe.ValidationError):

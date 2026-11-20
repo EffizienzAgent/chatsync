@@ -174,6 +174,43 @@ class TestVoice(ChatsyncTestCase):
 		provider = transcription.provider()
 		self.assertIsInstance(provider, transcription.MistralProvider)
 
+	def use_openai_compatible(self, url="http://whisper:8000/v1/", key=None, language="de"):
+		settings = frappe.get_single("Chat Sync Settings")
+		settings.update({"transcription_provider": "OpenAI-compatible", "transcription_url": url,
+						 "transcription_api_key": key, "transcription_model": "Systran/faster-whisper-small",
+						 "transcription_language": language})
+		settings.save(ignore_permissions=True)
+
+	def test_openai_compatible_self_hosted_without_key(self):
+		self.use_openai_compatible()
+		reply = MagicMock(ok=True)
+		reply.json.return_value = {"text": " Hallo vom eigenen Server "}
+		with patch("chatsync.transcription.requests.post", return_value=reply) as post:
+			result = voice.transcribe(self.voice.name)
+		self.assertEqual(result, "Hallo vom eigenen Server")
+		args, kwargs = post.call_args
+		self.assertEqual(args[0], "http://whisper:8000/v1/audio/transcriptions")
+		self.assertEqual(kwargs["headers"], {})
+		self.assertEqual(kwargs["data"], {"model": "Systran/faster-whisper-small", "language": "de"})
+		self.voice.reload()
+		self.assertEqual(self.voice.transcript_provider, "OpenAI-compatible")
+
+	def test_openai_compatible_with_key(self):
+		self.use_openai_compatible(url="https://api.example.test/v1", key="sk-test-1", language=None)
+		reply = MagicMock(ok=True)
+		reply.json.return_value = {"text": "ok"}
+		with patch("chatsync.transcription.requests.post", return_value=reply) as post:
+			voice.transcribe(self.voice.name)
+		args, kwargs = post.call_args
+		self.assertEqual(kwargs["headers"], {"Authorization": "Bearer sk-test-1"})
+		self.assertEqual(kwargs["data"], {"model": "Systran/faster-whisper-small"})
+
+	def test_openai_compatible_needs_http_url(self):
+		self.use_openai_compatible(url="http://whisper:8000/v1")
+		frappe.db.set_single_value("Chat Sync Settings", "transcription_url", "file:///etc/passwd")
+		with self.assertRaises(frappe.ValidationError):
+			transcription.provider()
+
 	def test_too_large_voice_message(self):
 		self.fake.error = AssetTooLarge(media.MAX_BYTES)
 		with self.assertRaises(media.FileTooLarge):

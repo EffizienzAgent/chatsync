@@ -173,3 +173,12 @@ Group assigned,Gruppe zugeordnet,Chat View
 Remove group,Gruppe entfernen,Chat View
 Remove the group from the CRM? Its messages will be deleted and it is not suggested again.,Gruppe aus dem CRM entfernen? Ihre Nachrichten werden gelöscht und sie wird nicht mehr vorgeschlagen.,Chat View
 by name,nach Name,Chat View
+OpenAI-compatible,OpenAI-kompatibel
+Transcription Service URL,Adresse des Transkriptionsdienstes
+Transcription API Key,API-Schlüssel des Transkriptionsdienstes
+Transcription Model,Transkriptionsmodell
+Transcription Language,Sprache der Transkription
+"Base URL of an OpenAI-compatible API, e.g. http://whisper:8000/v1 for a self-hosted Whisper server (speaches, whisper.cpp, LocalAI) or https://api.openai.com/v1","Basisadresse einer OpenAI-kompatiblen Schnittstelle, z. B. http://whisper:8000/v1 für einen eigenen Whisper-Server (speaches, whisper.cpp, LocalAI) oder https://api.openai.com/v1"
+Leave empty if the service needs no key (e.g. self-hosted in your own network),"Leer lassen, wenn der Dienst keinen Schlüssel braucht (z. B. selbst betrieben im eigenen Netz)"
+"Model name the service expects, e.g. whisper-1 or Systran/faster-whisper-small","Modellname, den der Dienst erwartet, z. B. whisper-1 oder Systran/faster-whisper-small"
+Optional ISO code like de; empty = detect automatically,Optional ISO-Code wie de; leer = automatisch erkennen

@@ -11,7 +11,11 @@
   "initial_days",
   "transcription_provider",
   "mistral_api_key",
-  "mistral_model"
+  "mistral_model",
+  "transcription_url",
+  "transcription_api_key",
+  "transcription_model",
+  "transcription_language"
  ],
  "fields": [
   {
@@ -30,18 +34,50 @@
    "fieldname": "transcription_provider",
    "fieldtype": "Select",
    "label": "Transcription Provider",
-   "options": "\nMistral"
+   "options": "\nMistral\nOpenAI-compatible"
   },
   {
    "fieldname": "mistral_api_key",
    "fieldtype": "Password",
-   "label": "Mistral API Key"
+   "label": "Mistral API Key",
+   "depends_on": "eval:doc.transcription_provider!='OpenAI-compatible'"
   },
   {
    "fieldname": "mistral_model",
    "fieldtype": "Data",
    "label": "Mistral Model",
-   "default": "voxtral-mini-transcribe-3"
+   "default": "voxtral-mini-transcribe-3",
+   "depends_on": "eval:doc.transcription_provider!='OpenAI-compatible'"
+  },
+  {
+   "fieldname": "transcription_url",
+   "fieldtype": "Data",
+   "label": "Transcription Service URL",
+   "depends_on": "eval:doc.transcription_provider=='OpenAI-compatible'",
+   "mandatory_depends_on": "eval:doc.transcription_provider=='OpenAI-compatible'",
+   "description": "Base URL of an OpenAI-compatible API, e.g. http://whisper:8000/v1 for a self-hosted Whisper server (speaches, whisper.cpp, LocalAI) or https://api.openai.com/v1"
+  },
+  {
+   "fieldname": "transcription_api_key",
+   "fieldtype": "Password",
+   "label": "Transcription API Key",
+   "depends_on": "eval:doc.transcription_provider=='OpenAI-compatible'",
+   "description": "Leave empty if the service needs no key (e.g. self-hosted in your own network)"
+  },
+  {
+   "fieldname": "transcription_model",
+   "fieldtype": "Data",
+   "label": "Transcription Model",
+   "depends_on": "eval:doc.transcription_provider=='OpenAI-compatible'",
+   "default": "whisper-1",
+   "description": "Model name the service expects, e.g. whisper-1 or Systran/faster-whisper-small"
+  },
+  {
+   "fieldname": "transcription_language",
+   "fieldtype": "Data",
+   "label": "Transcription Language",
+   "depends_on": "eval:doc.transcription_provider=='OpenAI-compatible'",
+   "description": "Optional ISO code like de; empty = detect automatically"
   }
  ],
  "issingle": 1,
